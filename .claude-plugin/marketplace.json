@@ -1,0 +1,17 @@
+{
+  "name": "llm-obsidian-wiki",
+  "owner": {
+    "name": "Ignat Romanov",
+    "url": "https://github.com/ignromanov"
+  },
+  "strict": false,
+  "plugins": [
+    {
+      "name": "llm-obsidian-wiki",
+      "source": ".",
+      "version": "0.2.0",
+      "description": "Build and maintain persistent knowledge bases with LLMs. Capture sources, ingest into structured wiki, query with citations, lint for health. 7 skills, 5 agents, schema versioning.",
+      "license": "MIT"
+    }
+  ]
+}

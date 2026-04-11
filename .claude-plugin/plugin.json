@@ -1,0 +1,17 @@
+{
+  "name": "llm-obsidian-wiki",
+  "version": "0.2.0",
+  "description": "Persistent, compounding knowledge base maintained by LLMs in Obsidian. Inspired by Karpathy's LLM Wiki pattern.",
+  "author": {
+    "name": "Ignat Romanov",
+    "url": "https://github.com/ignromanov"
+  },
+  "repository": "https://github.com/ignromanov/llm-obsidian-wiki",
+  "homepage": "https://github.com/ignromanov/llm-obsidian-wiki#readme",
+  "license": "MIT",
+  "keywords": [
+    "wiki", "knowledge-base", "obsidian", "llm",
+    "zettelkasten", "claude-code-plugin", "karpathy",
+    "compounding-knowledge", "second-brain"
+  ]
+}
