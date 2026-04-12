@@ -98,7 +98,7 @@ This is **personal knowledge management (PKM) for the LLM era** — Karpathy's l
 ```bash
 # Via Claude Code marketplace
 /plugin marketplace add ignromanov/llm-obsidian-wiki
-/plugin install llm-obsidian-wiki@llm-obsidian-wiki
+/plugin install llm-obsidian-wiki@ignromanov
 
 # Or local install
 claude --plugin-dir /path/to/llm-obsidian-wiki

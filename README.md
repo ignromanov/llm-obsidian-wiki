@@ -27,7 +27,7 @@ This plugin turns that idea into a working system. It is a Claude Code plugin wi
 > - **No telemetry**: No analytics, no usage tracking, no phone-home behavior of any kind.
 > - **Network access**: Only capture scripts (`capture-url.sh`, `capture-youtube.sh`, `capture-github.sh`) make network requests, and only to URLs you explicitly provide.
 > - **What it creates**: Files in `raw/`, `wiki/`, `index.md`, `log.md`, `wiki.config.md`, and `.obsidian/` config -- all inside your vault.
-> - **Uninstall**: `/plugin remove llm-obsidian-wiki@llm-obsidian-wiki` -- your vault data remains untouched.
+> - **Uninstall**: `/plugin remove llm-obsidian-wiki@ignromanov` -- your vault data remains untouched.
 
 ## Install
 
@@ -40,7 +40,7 @@ From the Claude Code plugin marketplace:
 /plugin marketplace add ignromanov/llm-obsidian-wiki
 
 # Install the plugin
-/plugin install llm-obsidian-wiki@llm-obsidian-wiki
+/plugin install llm-obsidian-wiki@ignromanov
 ```
 
 Or load directly from a local clone:

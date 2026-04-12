@@ -1,5 +1,5 @@
 {
-  "name": "llm-obsidian-wiki",
+  "name": "ignromanov",
   "owner": {
     "name": "Ignat Romanov",
     "url": "https://github.com/ignromanov"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "llm-obsidian-wiki",
-      "source": "."
+      "source": "./"
     }
   ]
 }
