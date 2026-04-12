@@ -2,7 +2,7 @@
 # Usage: init-vault.sh <vault_path> <config_file>
 # Reads wiki.config.md and creates the full Obsidian vault directory structure.
 set -Eeuo pipefail
-shopt -s inherit_errexit
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

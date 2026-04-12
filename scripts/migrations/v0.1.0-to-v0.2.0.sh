@@ -3,7 +3,7 @@
 # Adds: confidence, relations, source_hashes to all wiki pages
 # Idempotent: skips pages that already have the fields
 set -Eeuo pipefail
-shopt -s inherit_errexit
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 VAULT="${1:?Usage: v0.1.0-to-v0.2.0.sh <vault_path>}"

@@ -4,7 +4,7 @@
 # Exit code: 0 = all clear, 1 = issues found.
 # Format: [section]\nkey=value — designed for LLM agent consumption.
 set -Eeuo pipefail
-shopt -s inherit_errexit
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"

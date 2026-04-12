@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Captures a GitHub issue, PR, discussion, or repo README into raw/external/.
 set -Eeuo pipefail
-shopt -s inherit_errexit
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 # Escape string for safe YAML double-quoted value

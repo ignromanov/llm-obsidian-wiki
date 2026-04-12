@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Creates a wiki page from template with pre-filled frontmatter.
 set -Eeuo pipefail
-shopt -s inherit_errexit
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 # Usage: create-page.sh <type> <title> [vault_path]

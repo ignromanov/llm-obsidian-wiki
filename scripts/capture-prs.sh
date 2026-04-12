@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Captures merged PRs from a GitHub repo into raw/inbox/.
 set -Eeuo pipefail
-shopt -s inherit_errexit
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 # Usage: capture-prs.sh <repo> <vault_path> [since_date]
