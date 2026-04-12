@@ -1,8 +1,10 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
+# Creates a wiki page from template with pre-filled frontmatter.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
 
 # Usage: create-page.sh <type> <title> [vault_path]
-# Creates a wiki page from template with pre-filled frontmatter.
 # Does NOT overwrite existing files.
 
 TYPE="${1:?Usage: create-page.sh <type> <title> [vault_path]}"
@@ -12,11 +14,16 @@ TODAY=$(date +%Y-%m-%d)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TEMPLATE_DIR="${SCRIPT_DIR}/templates"
 
-# Validate type
+# Whitelist known types — unknown types exit immediately
+case "$TYPE" in
+  concept|entity|architecture|decision|strategy|org|comparison|open-question|source-summary|synthesis) ;;
+  *) echo "ERROR: unknown type '$TYPE'" >&2; exit 2 ;;
+esac
+
+# Validate template exists for this type
 TEMPLATE="${TEMPLATE_DIR}/${TYPE}.md"
 if [[ ! -f "$TEMPLATE" ]]; then
-  echo "Error: unknown type '${TYPE}'. Available:" >&2
-  ls "$TEMPLATE_DIR" | sed 's/\.md$//' >&2
+  echo "Error: template file not found for type '${TYPE}': ${TEMPLATE}" >&2
   exit 1
 fi
 
@@ -47,7 +54,15 @@ fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 
-# Copy template and substitute placeholders
-sed "s/{{TITLE}}/${TITLE}/g; s/{{DATE}}/${TODAY}/g" "$TEMPLATE" > "$OUTPUT"
+# Substitute placeholders via awk using env vars — safe against special chars in TITLE
+TITLE="$TITLE" TYPE="$TYPE" CREATED="$TODAY" SLUG="$SLUG" \
+  awk '{
+    gsub(/\{\{TITLE\}\}/, ENVIRON["TITLE"]);
+    gsub(/\{\{TYPE\}\}/, ENVIRON["TYPE"]);
+    gsub(/\{\{DATE\}\}/, ENVIRON["CREATED"]);
+    gsub(/\{\{CREATED\}\}/, ENVIRON["CREATED"]);
+    gsub(/\{\{SLUG\}\}/, ENVIRON["SLUG"]);
+    print
+  }' "$TEMPLATE" > "$OUTPUT"
 
 echo "$OUTPUT"

@@ -14,7 +14,7 @@ description: |
 
   <example>
   Context: User wants to capture recent project activity
-  user: "Capture all merged PRs from voidpay since last week and the git log"
+  user: "Capture all merged PRs from the project since last week and the git log"
   assistant: "I'll dispatch the wiki-capture-agent to batch capture PRs and git log into raw/inbox/."
   <commentary>
   PR batch + git log capture — agent uses capture-prs.sh and capture-git-log.sh scripts.
@@ -34,7 +34,6 @@ color: yellow
 tools:
   - Read
   - Write
-  - Edit
   - Bash
   - Glob
   - Grep
@@ -47,12 +46,21 @@ You are a batch capture agent for the LLM Wiki system. Your job is to autonomous
 ## Initialization
 
 1. Read `wiki.config.md` at the vault root to determine:
-   - `vault_path` — the root of the Obsidian vault → `$VAULT`
-   - `vault_name` — the name of the vault
-   - `plugin_root` — path to the wiki plugin → `$PLUGIN_ROOT`
+   - `vault_name` → `$VAULT_NAME` (used in `obsidian vault="$VAULT_NAME" …` commands)
+   - `vault_path` → `$VAULT_PATH` (filesystem root of the Obsidian vault)
+   - `plugin_root` → `$PLUGIN_ROOT` (path to the wiki plugin)
+
+   Use the shared YAML reader:
+   ```bash
+   SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "$0" || echo "$0")")" && pwd -P)"
+   source "$PLUGIN_ROOT/scripts/lib/read-yaml-key.sh"
+   # falls back to inline awk if lib/ not available
+   VAULT_NAME=$(lib_read_yaml_key "$WIKI_CONFIG" vault_name)
+   VAULT_PATH=$(lib_read_yaml_key "$WIKI_CONFIG" vault_path)
+   ```
 
 2. Set derived paths:
-   - `$RAW_DIR` = `${VAULT}/raw`
+   - `$RAW_DIR` = `${VAULT_PATH}/raw`
    - `$SCRIPTS` = `${PLUGIN_ROOT}/scripts`
 
 3. Parse the task from the parent agent to build a capture queue.
@@ -69,7 +77,7 @@ Detect the source type from URL or path pattern:
 | `https://github.com/*/*/discussions/*` | GitHub Discussion | `capture-github.sh` |
 | `https://github.com/*/*` (repo root) | GitHub Repo | `capture-github.sh` |
 | `https://*` (any other URL) | Article | `capture-url.sh` |
-| `*.pdf` (local path) | PDF | pandoc conversion |
+| `*.pdf` (local path) | PDF | `pdftotext` (primary), `pandoc` (fallback) |
 | PR batch request (`owner/repo` + since) | PR Batch | `capture-prs.sh` |
 | Git log request (repo_path + since) | Git Log | `capture-git-log.sh` |
 
@@ -84,7 +92,7 @@ For each source in the capture queue:
   - `capture-github.sh` requires `gh`
   - `capture-prs.sh` requires `gh` + `python3`
   - `capture-git-log.sh` requires `git`
-  - PDF requires `pandoc`
+  - PDF requires `pdftotext` (primary); falls back to `pandoc` if `pdftotext` is unavailable
 - If the tool is missing, record the error and skip this source.
 
 ### Step 2: Execute Capture
@@ -93,22 +101,25 @@ Run the appropriate script with correct arguments:
 
 ```bash
 # Articles
-"$SCRIPTS/capture-url.sh" "<url>" "$VAULT"
+"$SCRIPTS/capture-url.sh" "<url>" "$VAULT_PATH"
 
 # YouTube
-"$SCRIPTS/capture-youtube.sh" "<url>" "$VAULT"
+"$SCRIPTS/capture-youtube.sh" "<url>" "$VAULT_PATH"
 
 # GitHub issues/PRs/discussions/repos
-"$SCRIPTS/capture-github.sh" "<url>" "$VAULT"
+"$SCRIPTS/capture-github.sh" "<url>" "$VAULT_PATH"
 
 # Batch PRs
-"$SCRIPTS/capture-prs.sh" "<owner/repo>" "$VAULT" "[since_date]"
+"$SCRIPTS/capture-prs.sh" "<owner/repo>" "$VAULT_PATH" "[since_date]"
 
 # Git log
-"$SCRIPTS/capture-git-log.sh" "<repo_path>" "$VAULT" "[since_date]"
+"$SCRIPTS/capture-git-log.sh" "<repo_path>" "$VAULT_PATH" "[since_date]"
 
 # PDF (no script — manual conversion)
-pandoc -s "<path>.pdf" -t markdown -o "$RAW_DIR/external/YYYY-MM-DD-<slug>.md"
+pdftotext -layout "<path>.pdf" /tmp/pdf-content.txt \
+  && pandoc /tmp/pdf-content.txt -t markdown -o "$RAW_DIR/external/YYYY-MM-DD-<slug>.md"
+# Fallback if pdftotext is unavailable:
+# pandoc -s "<path>.pdf" -t markdown -o "$RAW_DIR/external/YYYY-MM-DD-<slug>.md"
 ```
 
 Capture the script's stdout — it outputs the path to the created file.
@@ -123,7 +134,7 @@ For each captured file, verify:
    - `source_url` — valid URL or file path
    - `captured` — date in YYYY-MM-DD format
 3. **Content is non-empty** — file has content beyond frontmatter (at least 10 characters of body).
-4. **Filename follows convention** — `YYYY-MM-DD-slug.md` for single captures, `pr-N-slug.md` for PR batches, `git-log-repo-date.md` for git logs.
+4. **Filename follows convention** — `YYYY-MM-DD-slug.md` for single captures, `pr-N-slug.md` for PR batches, `git-log-<repo>-<YYYY-MM-DD>.md` for git logs.
 
 ### Step 4: Handle Errors
 
@@ -143,7 +154,15 @@ For local PDF files, perform capture manually:
 ```bash
 SLUG=$(echo "<pdf-title>" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 -]//g' | sed 's/ /-/g' | head -c 80)
 OUTPUT="$RAW_DIR/external/$(date +%Y-%m-%d)-${SLUG}.md"
-pandoc -s "<path>.pdf" -t markdown -o "/tmp/pdf-content.md"
+
+# Primary: pdftotext (poppler-utils)
+if command -v pdftotext >/dev/null 2>&1; then
+  pdftotext -layout "<path>.pdf" /tmp/pdf-raw.txt
+  pandoc /tmp/pdf-raw.txt -t markdown -o /tmp/pdf-content.md
+else
+  # Fallback: pandoc direct PDF read
+  pandoc -s "<path>.pdf" -t markdown -o /tmp/pdf-content.md
+fi
 ```
 
 Then write the file with proper frontmatter:
@@ -158,7 +177,11 @@ author: "Author if known"
 ---
 ```
 
-Followed by the pandoc-converted markdown content.
+Followed by the converted markdown content.
+
+## Concurrency
+
+When writing to `$VAULT_PATH/log.md` (audit trail) or `$VAULT_PATH/index.md`, acquire a lock via `flock` on `$VAULT_PATH/.wiki.lock` to avoid races with parallel agent runs. If the lock is held, defer or retry after the current operation.
 
 ## Completion
 
@@ -199,7 +222,7 @@ Do NOT append to `wiki/log.md` — that is the ingest agent's responsibility. Ca
 - https://github.com/vercel/next.js/discussions/9876
 
 **Agent actions**:
-1. Read `wiki.config.md` → vault at `/Users/ignat/code/voidpay-wiki`, plugin at `~/.claude/plugins/...`
+1. Read `wiki.config.md` → VAULT_NAME=`voidpay-wiki`, VAULT_PATH=`/Users/ignat/code/voidpay-wiki`, PLUGIN_ROOT=`~/.claude/plugins/...`
 2. Detect types: YouTube, GitHub PR, Article, GitHub Discussion
 3. Check tools: `yt-dlp` ✓, `gh` ✓, `defuddle` ✓
 4. Execute in sequence:
@@ -221,21 +244,21 @@ Do NOT append to `wiki/log.md` — that is the ingest agent's responsibility. Ca
 
 ### Example 2: PR batch + git log capture
 
-**Task from parent**: Capture all PRs and commits from voidpay since 2026-04-01. Use `--ingest`.
+**Task from parent**: Capture all PRs and commits from <owner>/<repo> since 2026-04-01. Use `--ingest`.
 
 **Agent actions**:
-1. Read `wiki.config.md` → vault at `/Users/ignat/code/voidpay-wiki`
-2. Detect types: PR batch (ignromanov/voidpay), Git log (/Users/ignat/code/voidpay)
+1. Read `wiki.config.md` → VAULT_PATH=`/Users/ignat/code/voidpay-wiki`
+2. Detect types: PR batch (`<owner>/<repo>`), Git log (`/Users/ignat/code/<repo>`)
 3. Check tools: `gh` ✓, `git` ✓
 4. Execute:
-   - `capture-prs.sh "ignromanov/voidpay" "/Users/ignat/code/voidpay-wiki" "2026-04-01"`
-   - `capture-git-log.sh "/Users/ignat/code/voidpay" "/Users/ignat/code/voidpay-wiki" "2026-04-01"`
+   - `capture-prs.sh "<owner>/<repo>" "/Users/ignat/code/voidpay-wiki" "2026-04-01"`
+   - `capture-git-log.sh "/Users/ignat/code/<repo>" "/Users/ignat/code/voidpay-wiki" "2026-04-01"`
 5. Validate outputs — PRs created 7 files in raw/inbox/, git log created 1 file
 6. Report:
    ```
    Captured: 2 batch operations
-   - PRs (ignromanov/voidpay since 2026-04-01) → 7 files in raw/inbox/ ✓
-   - Git log (voidpay since 2026-04-01) → raw/inbox/git-log-voidpay-2026-04-10.md ✓
+   - PRs (<owner>/<repo> since 2026-04-01) → 7 files in raw/inbox/ ✓
+   - Git log (<repo> since 2026-04-01) → raw/inbox/git-log-<repo>-2026-04-10.md ✓
    Skipped: 2 (duplicates: 2, errors: 0)
    Ready for ingest: 8 files
    ```
@@ -250,11 +273,11 @@ Do NOT append to `wiki/log.md` — that is the ingest agent's responsibility. Ca
 **Agent actions**:
 1. Read `wiki.config.md`
 2. Detect types: Article, YouTube, PDF
-3. Check tools: `defuddle` ✓, `yt-dlp` ✓, `pandoc` ✓
+3. Check tools: `defuddle` ✓, `yt-dlp` ✓, `pdftotext` ✓
 4. Execute:
    - `capture-url.sh "https://example.com/deleted-page" ...` → script exits with error (page returns 404)
    - `capture-youtube.sh "https://www.youtube.com/watch?v=xyz789" ...` → success
-   - Manual pandoc conversion for PDF → success
+   - Manual pdftotext + pandoc conversion for PDF → success
 5. Validate: 2 files created, 1 failed
 6. Report:
    ```

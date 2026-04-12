@@ -1,5 +1,8 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
+# Captures a GitHub issue, PR, discussion, or repo README into raw/external/.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
 
 # Escape string for safe YAML double-quoted value
 yaml_escape() {
@@ -10,7 +13,6 @@ yaml_escape() {
 }
 
 # Usage: capture-github.sh <github-url> <vault_path>
-# Captures a GitHub issue, PR, discussion, or repo README into raw/external/.
 
 URL="${1:?Usage: capture-github.sh <github-url> <vault_path>}"
 VAULT="${2:?Usage: capture-github.sh <github-url> <vault_path>}"
@@ -60,6 +62,14 @@ else
   echo "Supported: issues, PRs, discussions, repo root" >&2
   exit 1
 fi
+
+# Validate owner/repo to prevent GraphQL injection and shell substitution
+[[ "$OWNER_REPO" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || {
+  echo "ERROR: invalid owner/repo format: $OWNER_REPO" >&2
+  exit 2
+}
+OWNER="${OWNER_REPO%%/*}"
+REPO_NAME="${OWNER_REPO##*/}"
 
 # --- Fetch content based on type ---
 
@@ -113,22 +123,27 @@ for c in data.get('comments',[]):
 
   discussion)
     SOURCE_TYPE="github-discussion"
-    # gh doesn't have native discussion view, use GraphQL API
-    JSON=$(gh api graphql -f query="
-      query {
-        repository(owner: \"${OWNER_REPO%%/*}\", name: \"${OWNER_REPO##*/}\") {
-          discussion(number: ${NUMBER}) {
-            title
-            body
-            author { login }
-            createdAt
-            comments(first: 50) {
-              nodes { body author { login } createdAt }
+    # gh doesn't have native discussion view; use GraphQL API with -F variables (not string interpolation)
+    # shellcheck disable=SC2016
+    JSON=$(gh api graphql \
+      -F owner="$OWNER" \
+      -F name="$REPO_NAME" \
+      -F num="$NUMBER" \
+      -f query='
+        query($owner: String!, $name: String!, $num: Int!) {
+          repository(owner: $owner, name: $name) {
+            discussion(number: $num) {
+              title
+              body
+              author { login }
+              createdAt
+              comments(first: 50) {
+                nodes { body author { login } createdAt }
+              }
             }
           }
         }
-      }
-    " 2>/dev/null || echo "")
+      ' 2>/dev/null || echo "")
 
     if [[ -n "$JSON" ]]; then
       TITLE=$(echo "$JSON" | python3 -c "
@@ -169,8 +184,8 @@ print(disc.get('author',{}).get('login','unknown'))
 
   repo)
     SOURCE_TYPE="github-repo"
-    # Fetch README
-    README_CONTENT=$(gh api "repos/${OWNER_REPO}/readme" --jq .content 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    # Fetch README; --decode works on both BSD (macOS) and GNU base64
+    README_CONTENT=$(gh api "repos/${OWNER_REPO}/readme" --jq .content 2>/dev/null | base64 --decode 2>/dev/null || echo "")
 
     if [[ -z "$README_CONTENT" ]]; then
       echo "Error: could not fetch README for ${OWNER_REPO}" >&2

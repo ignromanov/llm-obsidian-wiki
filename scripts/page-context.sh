@@ -1,6 +1,4 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/usr/bin/env bash
 # Usage: page-context.sh <vault_path> <page>
 # Outputs full structured context for a wiki page:
 #   [meta]      — title, tldr, type, status, updated, tags, aliases, sources
@@ -8,11 +6,18 @@ set -euo pipefail
 #   [links]     — outbound links with total and unresolved count
 # <page> is a wikilink-style name (no path, no extension), e.g. "magic-dust".
 # Format: [section]\nkey=value or list — designed for LLM agent consumption.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/read-yaml-key.sh
+source "$SCRIPT_DIR/lib/read-yaml-key.sh"
 
 VAULT_PATH="${1:?Usage: page-context.sh <vault_path> <page>}"
 PAGE="${2:?Usage: page-context.sh <vault_path> <page>}"
 
-OBS_VAULT=$(awk '/^vault_name:/{print $2}' "${VAULT_PATH}/wiki.config.md" 2>/dev/null)
+OBS_VAULT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "vault_name")
 if [[ -z "$OBS_VAULT" ]]; then
   echo "Error: vault_name not found in wiki.config.md" >&2
   exit 1

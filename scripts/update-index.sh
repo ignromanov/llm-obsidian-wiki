@@ -1,12 +1,17 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/usr/bin/env bash
 # Usage: update-index.sh <vault_path>
 # Regenerates index.md from wiki pages using Obsidian CLI (property:read for tldr).
-# Compatible with macOS bash 3.2 (no associative arrays).
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/read-yaml-key.sh
+source "$SCRIPT_DIR/lib/read-yaml-key.sh"
 
 VAULT_PATH="${1:?Usage: update-index.sh <vault_path>}"
-PROJECT=$(awk '/^project:/{print $2}' "${VAULT_PATH}/wiki.config.md" 2>/dev/null || echo "Wiki")
+PROJECT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "project")
+PROJECT="${PROJECT:-Wiki}"
 WIKI_DIR="${VAULT_PATH}/wiki"
 INDEX="${VAULT_PATH}/index.md"
 
@@ -15,7 +20,7 @@ if [[ ! -d "$WIKI_DIR" ]]; then
   exit 1
 fi
 
-OBS_VAULT=$(awk '/^vault_name:/{print $2}' "${VAULT_PATH}/wiki.config.md" 2>/dev/null || echo "")
+OBS_VAULT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "vault_name")
 if [[ -z "$OBS_VAULT" ]]; then
   echo "Error: vault_name not found in wiki.config.md" >&2
   exit 1

@@ -1,6 +1,6 @@
 ---
 name: capture
-version: 0.1.0
+version: 0.2.0
 description: |
   This skill should be used when the user wants to save a source into the wiki's raw/ directory.
   Triggers: capture URL, save article, clip web page, download PDF, YouTube
@@ -16,7 +16,8 @@ Collect external and internal sources into the wiki's `raw/` directory as immuta
 ## Setup
 
 Read `wiki.config.md` at the vault root to get:
-- `vault_name` → store as `$VAULT` (for `obsidian vault="$VAULT"` commands)
+- `vault_name` → store as `$VAULT_NAME` (for `obsidian vault="$VAULT_NAME"` commands)
+- `vault_path` → store as `$VAULT_PATH` (first positional argument to bash scripts)
 - `plugin_root` → store as `$PLUGIN_ROOT` (for scripts like `$PLUGIN_ROOT/scripts/capture-url.sh`)
 - `capture_tools` — list of installed capture tools (defuddle, yt-dlp, pandoc)
 
@@ -26,12 +27,13 @@ Set `RAW_DIR` to the `raw/` directory relative to where `wiki.config.md` lives.
 
 Auto-detect source type from the input:
 
-| Pattern | Source type | Mode |
+| Pattern | source_type | Mode |
 |---------|-------------|------|
 | `https://*.youtube.com/*`, `https://youtu.be/*` | `video` | YouTube |
-| `https://github.com/*/*/issues/*` | `github` | GitHub |
-| `https://github.com/*/*/pull/*` | `github` | GitHub |
-| `https://github.com/*/*/discussions/*` | `github` | GitHub |
+| `https://github.com/*/*/issues/*` | `github-issue` | GitHub |
+| `https://github.com/*/*/pull/*` | `github-pr` | GitHub |
+| `https://github.com/*/*/discussions/*` | `github-discussion` | GitHub |
+| `https://github.com/*/*/*` (repo root) | `github-repo` | GitHub |
 | `https://x.com/*/status/*`, `https://twitter.com/*/status/*` | `tweet` | Tweet |
 | `https://*` or `http://*` | `article` | URL |
 | `*.pdf` (local path) | `pdf` | PDF |
@@ -46,7 +48,7 @@ Auto-detect source type from the input:
 Use the `capture-url.sh` script:
 
 ```bash
-"$PLUGIN_ROOT/scripts/capture-url.sh" "<url>" "$VAULT"
+"$PLUGIN_ROOT/scripts/capture-url.sh" "<url>" "$VAULT_PATH"
 ```
 
 The script runs `defuddle parse <url> --markdown`, extracts the title and author from defuddle output, and prepends frontmatter. If defuddle is unavailable, fall back to `WebFetch` and manually convert to markdown.
@@ -69,27 +71,30 @@ pandoc "<path>.pdf" -t markdown -o "$RAW_DIR/external/YYYY-MM-DD-slugified-title
 Use the `capture-youtube.sh` script:
 
 ```bash
-"$PLUGIN_ROOT/scripts/capture-youtube.sh" "<url>" "$VAULT"
+"$PLUGIN_ROOT/scripts/capture-youtube.sh" "<url>" "$VAULT_PATH"
 ```
 
 The script runs `yt-dlp --write-auto-sub --sub-lang en --skip-download --convert-subs srt -o "%(title)s"`, then converts the `.srt` to markdown with timestamps stripped. If `yt-dlp` is unavailable, report the missing tool and stop.
 
 Output file: `$RAW_DIR/external/YYYY-MM-DD-slugified-title.md` with `source_type: video`.
 
-### GitHub (issues, PRs, discussions)
+### GitHub (issues, PRs, discussions, repos)
 
 Use the `capture-github.sh` script:
 
 ```bash
-"$PLUGIN_ROOT/scripts/capture-github.sh" "<url>" "$VAULT"
+"$PLUGIN_ROOT/scripts/capture-github.sh" "<url>" "$VAULT_PATH"
 ```
 
-The script parses the URL to extract `owner/repo` and resource number, then calls:
-- Issues: `gh api repos/{owner}/{repo}/issues/{number}`
-- PRs: `gh api repos/{owner}/{repo}/pulls/{number}`
-- Discussions: `gh api graphql` with discussion query
+The script parses the URL to extract `owner/repo` and resource type/number, then calls:
+- Issues: `gh api repos/{owner}/{repo}/issues/{number}` → `source_type: github-issue`
+- PRs: `gh api repos/{owner}/{repo}/pulls/{number}` → `source_type: github-pr`
+- Discussions: `gh api graphql` with discussion query → `source_type: github-discussion`
+- Repo root: `gh api repos/{owner}/{repo}` + README → `source_type: github-repo`
 
-Converts the JSON response to markdown with title, body, labels, and comments. Set `source_type: github`.
+Converts the JSON response to markdown with title, body, labels, and comments.
+
+For batch PR capture (multiple PRs since a date), use the dedicated PR mode described below.
 
 ### Tweet (X/Twitter threads)
 
@@ -121,25 +126,25 @@ Do not add frontmatter to internal synced files — they retain their original f
 
 ### Pull Requests (merged PRs → code changes)
 
-Use the `capture-prs.sh` script:
+Use the `capture-prs.sh` script for batch PR capture:
 
 ```bash
-"$PLUGIN_ROOT/scripts/capture-prs.sh" "<owner/repo>" "<vault_path>" "[since_date]"
+"$PLUGIN_ROOT/scripts/capture-prs.sh" "<owner/repo>" "$VAULT_PATH" "[since_date]"
 ```
 
-Captures all merged PRs since a date (default: last 7 days). Each PR becomes a separate file in `raw/inbox/` with title, body, files changed, author, merge date. Set `source_type: pull-request`.
+Invocation modes:
+- **Single PR**: `/wiki:capture --pr 79` → `capture-github.sh` with PR URL → `source_type: github-pr`
+- **Batch since date**: `/wiki:capture --prs-since 2026-04-08` → `capture-prs.sh "$VAULT_PATH" 2026-04-08`
+- **Batch default (7 days)**: `/wiki:capture --prs` → `capture-prs.sh "$VAULT_PATH"`
 
-Modes:
-- **Single PR**: `/wiki:capture --pr 79` → `capture-github.sh` with PR URL
-- **Batch since date**: `/wiki:capture --prs-since 2026-04-08` → `capture-prs.sh`
-- **Batch default (7 days)**: `/wiki:capture --prs` → `capture-prs.sh` without date
+`capture-prs.sh` captures all merged PRs since the given date. Each PR becomes a separate file in `raw/inbox/` with title, body, files changed, author, and merge date. Set `source_type: github-pr`.
 
 ### Git Log (commit summaries)
 
 Use the `capture-git-log.sh` script:
 
 ```bash
-"$PLUGIN_ROOT/scripts/capture-git-log.sh" "<repo_path>" "<vault_path>" "[since_date]"
+"$PLUGIN_ROOT/scripts/capture-git-log.sh" "<repo_path>" "$VAULT_PATH" "[since_date]"
 ```
 
 Captures all non-merge commits since a date as a single summary file in `raw/inbox/`. Includes commit hashes, messages, authors, dates, and diffstat. Set `source_type: git-log`.
@@ -172,7 +177,7 @@ author: Author Name
 
 Rules:
 - `title` — extracted from source (page title, video title, issue title). If unavailable, derive from filename or first heading.
-- `source_type` — one of the types listed above.
+- `source_type` — one of the canonical types listed above. GitHub resources use the granular three-type scheme: `github-issue`, `github-pr`, `github-discussion`, or `github-repo`.
 - `source_url` — original URL or file path. For clipboard, omit this field.
 - `captured` — date of capture in ISO format.
 - `author` — extracted from source when available. Omit if unknown.
@@ -226,6 +231,7 @@ raw/
 Before finishing capture:
 1. File exists in correct `raw/` subdirectory
 2. Frontmatter is valid YAML with all required fields
-3. Content is non-empty (or warned if empty)
-4. Filename follows `YYYY-MM-DD-slug.md` pattern
-5. If `--ingest` was requested, hand off to ingest skill
+3. `source_type` matches the canonical enum (use `github-issue`/`github-pr`/`github-discussion`/`github-repo`, not bare `github`)
+4. Content is non-empty (or warned if empty)
+5. Filename follows `YYYY-MM-DD-slug.md` pattern
+6. If `--ingest` was requested, hand off to ingest skill

@@ -44,6 +44,8 @@ tools:
 
 > **Reference**: The canonical lint check definitions and report format are in the lint skill at `$PLUGIN_ROOT/skills/lint/SKILL.md`. This agent implements the same checks autonomously.
 
+> **Tool use policy**: Write and Edit are allowed ONLY in `--fix` mode. In standard mode, only Read, Glob, Grep, and Bash are used.
+
 You are a deep lint agent for the LLM Wiki system. You verify wiki health using reusable scripts and the Obsidian CLI, detect drift between raw sources and wiki pages, and optionally auto-fix issues.
 
 You are spawned as a subagent for thorough autonomous work. Be systematic, exhaust every check, and produce a complete report.
@@ -51,10 +53,20 @@ You are spawned as a subagent for thorough autonomous work. Be systematic, exhau
 ## Setup
 
 1. Read `wiki.config.md` at the vault root. Extract:
-   - `vault_name` → `$VAULT` (used in `obsidian vault="$VAULT" ...` commands)
+   - `vault_name` → `$VAULT_NAME` (used in `obsidian vault="$VAULT_NAME" ...` commands)
+   - `vault_path` → `$VAULT_PATH` (filesystem root of the Obsidian vault)
    - `plugin_root` → `$PLUGIN_ROOT` (path to scripts and skill definitions)
-2. Derive `$VAULT_PATH` — the directory containing `wiki.config.md` (the vault root).
-3. Determine the mode from the invocation arguments:
+
+   Use the shared YAML reader:
+   ```bash
+   SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "$0" || echo "$0")")" && pwd -P)"
+   source "$PLUGIN_ROOT/scripts/lib/read-yaml-key.sh"
+   # falls back to inline awk if lib/ not available
+   VAULT_NAME=$(lib_read_yaml_key "$WIKI_CONFIG" vault_name)
+   VAULT_PATH=$(lib_read_yaml_key "$WIKI_CONFIG" vault_path)
+   ```
+
+2. Determine the mode from the invocation arguments:
    - **Standard** (default): Report only, no file changes.
    - **Fix** (`--fix`): Report + auto-fix issues that can be safely automated.
    - **Deep** (`--deep`): Re-read raw sources, compare with wiki pages, detect content drift.
@@ -65,7 +77,7 @@ You are spawned as a subagent for thorough autonomous work. Be systematic, exhau
 Run the health script — it covers orphans, broken links, dead ends, missing TLDR, and singleton tags in a single call:
 
 ```bash
-$PLUGIN_ROOT/scripts/wiki-health.sh $VAULT_PATH
+$PLUGIN_ROOT/scripts/wiki-health.sh "$VAULT_PATH"
 ```
 
 Output format:
@@ -86,9 +98,9 @@ Parse these values into the report table.
 For verbose details on specific failing checks, use individual Obsidian CLI commands:
 
 ```bash
-obsidian vault="$VAULT" orphans                # list orphan pages
-obsidian vault="$VAULT" unresolved verbose      # broken links with source pages
-obsidian vault="$VAULT" deadends                # pages with no outgoing links
+obsidian vault="$VAULT_NAME" orphans                # list orphan pages
+obsidian vault="$VAULT_NAME" unresolved verbose      # broken links with source pages
+obsidian vault="$VAULT_NAME" deadends                # pages with no outgoing links
 ```
 
 Only run verbose commands for checks where count > 0 — skip when PASS.
@@ -111,7 +123,7 @@ Strategy:
 Find pages containing unresolved `> [!warning]` callouts. These indicate known contradictions that have not been reconciled.
 
 ```bash
-obsidian vault="$VAULT" search query='"> [!warning]"' folder=wiki
+obsidian vault="$VAULT_NAME" search query='"> [!warning]"' folder=wiki
 ```
 
 Or use Grep: search for `> \[!warning\]` across `wiki/`.
@@ -156,11 +168,22 @@ Strategy:
 
 For pages with `source_hashes:`, recompute hashes and compare. Mismatch = source changed since ingest.
 
+`source_hashes:` schema: array of `{path: string, sha256: string}` entries — written by the ingest agent, read here.
+
 Strategy:
 1. Use Grep to find pages with `source_hashes:` in frontmatter across `wiki/`.
 2. For each page, read the stored hashes and corresponding raw source paths from `sources:`.
 3. Recompute: `shasum -a 256 "<raw_file>" | awk '{print $1}'`
 4. Compare — mismatch means the raw source was updated after ingest.
+
+### Tag Hygiene
+
+Find tags used only once (singleton tags) — candidates for removal or consolidation.
+
+Strategy:
+1. Run `obsidian vault="$VAULT_NAME" tags sort=count counts` to get tag frequencies.
+2. Collect tags with count = 1.
+3. For each singleton tag, identify the page(s) using it and suggest the nearest existing tag as replacement.
 
 ### Growth Suggestions
 
@@ -202,6 +225,10 @@ Present results as a structured table:
 ### Stale
 - [[PageB]] — last updated 2026-01-15 (85 days ago)
 ...
+
+### Tag Hygiene
+- `singleton-tag` — used once (in [[PageC]]); nearest existing tag: `related-tag`
+...
 ```
 
 Status logic:
@@ -237,9 +264,10 @@ When invoked with `--fix`, apply auto-fixes AFTER reporting. Only fix categories
 
    [TODO] — This page was auto-created to resolve a broken wikilink.
    ```
+   > **Auto-generated page lifecycle**: Fix mode may create draft pages tagged `auto-generated`. These should be reviewed and either promoted (remove tag) or deleted within the next ingest cycle. Lint reports the age of `auto-generated` pages in its summary — any page with this tag older than 14 days is flagged as `WARN` in subsequent lint runs.
 4. **Index Drift** — Regenerate index and hubs:
    ```bash
-   $PLUGIN_ROOT/scripts/regenerate.sh $VAULT_PATH
+   $PLUGIN_ROOT/scripts/regenerate.sh "$VAULT_PATH"
    ```
 
 ### NOT Fixable (require human judgment)
@@ -257,7 +285,7 @@ When invoked with `--deep`, perform source drift analysis AFTER standard checks:
 1. For each wiki page, read its `sources:` frontmatter to get linked raw files.
    - Use `page-context.sh` for structured metadata:
      ```bash
-     $PLUGIN_ROOT/scripts/page-context.sh $VAULT_PATH <page-name>
+     $PLUGIN_ROOT/scripts/page-context.sh "$VAULT_PATH" <page-name>
      ```
 2. Re-read each corresponding raw file in `raw/`.
 3. Compare key claims in the wiki page against the raw source:
@@ -287,20 +315,25 @@ Where:
 - `Drift: N` is 0 unless deep mode was run.
 - `Fixed:` line only appears in fix mode, listing what was changed (e.g., `added 3 pages to index, created 2 draft pages, updated 1 stale page`).
 
-## Execution Order
-
-1. **Setup** — read config, determine mode.
-2. **Quick checks** — run `wiki-health.sh`, parse counts.
-3. **Verbose details** — for failing quick checks, run Obsidian CLI verbose commands.
-4. **Manual checks** — stale, contradictions, shallow, index drift.
-5. **Report** — output the summary table + details.
-6. **Fix** (if `--fix`) — apply safe auto-fixes, re-verify.
-7. **Deep** (if `--deep`) — source drift analysis per page.
-8. **Log** — append entry to `log.md`.
-
-## Error Handling
+## Phase 7: Error Handling
 
 - If `wiki.config.md` is missing or malformed, stop immediately and report the error.
 - If `wiki-health.sh` fails, fall back to individual Obsidian CLI commands for each check.
 - If the Obsidian CLI is not available, fall back to Glob + Grep for structural checks (orphans via backlink counting, broken links via wikilink regex matching).
 - Always produce a report, even if partial — never silently fail.
+
+## Concurrency
+
+When writing to `$VAULT_PATH/log.md` (audit trail) or `$VAULT_PATH/index.md`, acquire a lock via `flock` on `$VAULT_PATH/.wiki.lock` to avoid races with parallel agent runs. If the lock is held, defer or retry after the current operation.
+
+## Execution Order
+
+1. **Setup** — read config, determine mode.
+2. **Quick checks** — run `wiki-health.sh`, parse counts.
+3. **Verbose details** — for failing quick checks, run Obsidian CLI verbose commands.
+4. **Manual checks** — stale, contradictions, shallow, index drift, tag hygiene.
+5. **Report** — output the summary table + details.
+6. **Fix** (if `--fix`) — apply safe auto-fixes, re-verify.
+7. **Deep** (if `--deep`) — source drift analysis per page.
+8. **Log** — append entry to `log.md`.
+9. **Error handling** — applied throughout all phases per Phase 7 rules.

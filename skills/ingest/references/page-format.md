@@ -49,6 +49,17 @@ After creating a page, set the `tldr` property atomically:
 obsidian vault="$VAULT" property:set name=tldr value="..." path="<file>" silent
 ```
 
+## source_hashes frontmatter field
+
+Schema:
+```yaml
+source_hashes:
+  - path: "raw/external/src-example.md"
+    sha256: "hex-digest"
+```
+
+Purpose: provenance tracking. The lint agent compares these hashes against current raw source hashes to detect drift (source file changed since last ingest). Compute at ingest time via `shasum -a 256 <path> | awk '{print $1}'`. Add one entry per raw source referenced by the page. Do not recompute in Step 4 — reuse the hash computed in Step 3.
+
 ## Required Callouts
 
 | Callout | When |

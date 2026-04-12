@@ -1,5 +1,8 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
+# Captures merged PRs from a GitHub repo into raw/inbox/.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
 
 # Usage: capture-prs.sh <repo> <vault_path> [since_date]
 # Example: capture-prs.sh ignromanov/voidpay /path/to/wiki 2026-04-08
@@ -27,16 +30,20 @@ echo "Found $COUNT merged PRs in $REPO since $SINCE"
 
 # --- Process each PR ---
 
-CREATED=0
-
-echo "$PRS" | python3 -c "
+VAULT="$VAULT" REPO="$REPO" RAW_DIR="$RAW_DIR" TODAY="$TODAY" \
+  python3 <<'PYEOF'
 import json, sys, re, os
+from json import dumps as jdumps
 
-prs = json.load(sys.stdin)
-vault = '$VAULT'
-raw_dir = '$RAW_DIR'
-today = '$TODAY'
-repo = '$REPO'
+prs_json = sys.stdin.read()
+
+# Read env vars — no shell interpolation possible
+vault   = os.environ['VAULT']
+raw_dir = os.environ['RAW_DIR']
+today   = os.environ['TODAY']
+repo    = os.environ['REPO']
+
+prs = json.loads(prs_json)
 
 for pr in prs:
     number = pr['number']
@@ -61,18 +68,22 @@ for pr in prs:
     if files:
         for f in files:
             path = f.get('path', '') if isinstance(f, dict) else str(f)
-            file_list += f'- \`{path}\`\n'
+            file_list += f'- `{path}`\n'
     else:
         file_list = '*(file list not available)*\n'
 
+    title_safe = jdumps(f"PR #{number}: {title}")
+    author_safe = jdumps(author)
+    files_changed_val = len(files) if files else 'unknown'
+
     content = f'''---
-title: \"PR #{number}: {title}\"
+title: {title_safe}
 source_type: pull-request
 source_url: https://github.com/{repo}/pull/{number}
 captured: {today}
 merged: {merged}
-author: {author}
-files_changed: {len(files) if files else 'unknown'}
+author: {author_safe}
+files_changed: {files_changed_val}
 ---
 
 # PR #{number}: {title}
@@ -91,7 +102,7 @@ files_changed: {len(files) if files else 'unknown'}
     with open(filepath, 'w') as f:
         f.write(content)
     print(f'NEW: {filename}')
-" 2>&1
+PYEOF
 
 echo ""
 echo "Capture complete. Files saved to $RAW_DIR"

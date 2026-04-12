@@ -1,8 +1,17 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/usr/bin/env bash
 # Usage: init-vault.sh <vault_path> <config_file>
 # Reads wiki.config.md and creates the full Obsidian vault directory structure.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/canonical-path.sh
+source "$SCRIPT_DIR/lib/canonical-path.sh"
+# shellcheck source=./lib/check-deps.sh
+source "$SCRIPT_DIR/lib/check-deps.sh"
+
+lib_check_deps git || exit 1
 
 VAULT="${1:?Usage: init-vault.sh <vault_path> <config_file>}"
 CONFIG="${2:?Usage: init-vault.sh <vault_path> <config_file>}"
@@ -166,7 +175,7 @@ fi
 # --- Copy config to vault root ---
 
 VAULT_CONFIG="${VAULT}/wiki.config.md"
-if [[ ! -f "$VAULT_CONFIG" ]] && [[ "$(realpath "$CONFIG" 2>/dev/null || echo "$CONFIG")" != "$(realpath "$VAULT_CONFIG" 2>/dev/null || echo "$VAULT_CONFIG")" ]]; then
+if [[ ! -f "$VAULT_CONFIG" ]] && [[ "$(lib_canonical_path "$CONFIG")" != "$(lib_canonical_path "$VAULT_CONFIG")" ]]; then
   cp "$CONFIG" "$VAULT_CONFIG"
   CREATED+=("wiki.config.md")
 fi

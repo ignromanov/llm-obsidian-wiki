@@ -1,5 +1,13 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
+# Usage: capture-youtube.sh <youtube-url> <vault_path>
+# Captures a YouTube video transcript into raw/external/.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/check-deps.sh
+source "$SCRIPT_DIR/lib/check-deps.sh"
 
 # Escape string for safe YAML double-quoted value
 yaml_escape() {
@@ -9,17 +17,11 @@ yaml_escape() {
   echo "$s"
 }
 
-# Usage: capture-youtube.sh <youtube-url> <vault_path>
-# Captures a YouTube video transcript into raw/external/.
-
 URL="${1:?Usage: capture-youtube.sh <youtube-url> <vault_path>}"
 VAULT="${2:?Usage: capture-youtube.sh <youtube-url> <vault_path>}"
 TODAY=$(date +%Y-%m-%d)
 
-if ! command -v yt-dlp &>/dev/null; then
-  echo "Error: yt-dlp not found. Install with: brew install yt-dlp" >&2
-  exit 1
-fi
+lib_check_deps yt-dlp || { echo "Install with: brew install yt-dlp" >&2; exit 1; }
 
 RAW_DIR="${VAULT}/raw/external"
 mkdir -p "$RAW_DIR"

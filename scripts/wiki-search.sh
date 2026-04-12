@@ -1,16 +1,21 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/usr/bin/env bash
 # Usage: wiki-search.sh <vault_path> "<query>" [limit]
 # Combined search + TLDR triage in one call.
 # Returns search results with inline TLDRs and related tags for broadening.
 # Format: [section]\nstructured data — designed for LLM agent consumption.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/read-yaml-key.sh
+source "$SCRIPT_DIR/lib/read-yaml-key.sh"
 
 VAULT_PATH="${1:?Usage: wiki-search.sh <vault_path> <query> [limit]}"
 QUERY="${2:?Usage: wiki-search.sh <vault_path> <query> [limit]}"
 LIMIT="${3:-20}"
 
-OBS_VAULT=$(awk '/^vault_name:/{print $2}' "${VAULT_PATH}/wiki.config.md" 2>/dev/null)
+OBS_VAULT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "vault_name")
 if [[ -z "$OBS_VAULT" ]]; then
   echo "Error: vault_name not found in wiki.config.md" >&2
   exit 1

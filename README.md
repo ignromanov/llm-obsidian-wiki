@@ -4,7 +4,7 @@
 
 ### LLMs forget everything between sessions. This plugin gives them a memory that compounds.
 
-![Version](https://img.shields.io/badge/version-0.2.0-blue)
+![Version](https://img.shields.io/badge/version-0.3.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-orange)
 
@@ -18,7 +18,7 @@
 
 LLMs lose all context between sessions. RAG systems re-derive knowledge from raw documents on every query, spending tokens to rediscover what was already known. In 2025, [Andrej Karpathy proposed](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) a different approach: have the LLM incrementally build and maintain a persistent wiki -- structured, interlinked markdown that compounds over time. The idea sparked a [400+ comment discussion](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) drawing on the Zettelkasten tradition and digital garden movement.
 
-This plugin turns that idea into a working system. It is a Claude Code plugin with 7 skills, 5 agents, and 16 utility scripts that automates the full capture, ingest, query, and lint loop inside an Obsidian vault. Knowledge is compiled once and kept current -- not re-derived on every query.
+This plugin turns that idea into a working system. It is a Claude Code plugin with 8 skills, 5 agents, and 17 utility scripts that automates the full capture, ingest, query, and lint loop inside an Obsidian vault. Knowledge is compiled once and kept current -- not re-derived on every query.
 
 > [!IMPORTANT]
 > **Trust and transparency**
@@ -208,6 +208,7 @@ Every log entry includes `Deferred:` (unresolved issues) and `Next:` (suggested 
 | `/wiki:lint` | Health check -- orphans, stale pages, broken links, drift | `/wiki:lint --fix` |
 | `/wiki:browse [section]` | Quick overview of wiki contents by section or tag | `/wiki:browse concepts` |
 | `/wiki:status` | Wiki metrics -- page counts, health summary, unprocessed sources | `/wiki:status --unprocessed` |
+| `/wiki:migrate` | Migrate vault schema to current plugin version | `/wiki:migrate` |
 
 <details>
 <summary>Skill details</summary>
@@ -280,7 +281,7 @@ All agents run on Sonnet for cost efficiency. They read `wiki.config.md` for vau
 <details>
 <summary>Scripts reference</summary>
 
-16 utility scripts in `scripts/`:
+17 utility scripts in `scripts/` (plus 4 shared helpers in `scripts/lib/`):
 
 | Script | Purpose |
 |--------|---------|
@@ -301,7 +302,7 @@ All agents run on Sonnet for cost efficiency. They read `wiki.config.md` for vau
 | `wiki-search.sh` | Search with inline TLDRs and related tags |
 | `wiki-stats.sh` | Vault totals, per-section counts, activity dates |
 
-Plus `scripts/templates/` (10 page templates, one per type) and `scripts/migrations/` (versioned migration scripts).
+Plus `scripts/lib/` (4 shared helpers: `read-yaml-key.sh`, `portable-hash.sh`, `canonical-path.sh`, `check-deps.sh`), `scripts/templates/` (10 page templates, one per type), and `scripts/migrations/` (versioned migration scripts).
 
 </details>
 
@@ -391,9 +392,21 @@ Key fields in the YAML frontmatter:
 | `raw_dirs` | Raw source subdirectories |
 | `capture_tools` | Installed capture tools |
 | `plugin_root` | Path to the plugin directory |
-| `vault_name` | Obsidian vault name (for CLI commands) |
+| `vault_name` | Obsidian vault name (for CLI commands, e.g. `obsidian vault=<name>`) |
+| `vault_path` | Absolute path to the vault root (for bash scripts) — **required in v0.3.0** |
 
 Edit the YAML frontmatter values directly. Skills pick up changes on next invocation.
+
+> [!IMPORTANT]
+> **v0.3.0 breaking change:** `wiki.config.md` now requires BOTH `vault_name` AND `vault_path`. If you are upgrading from v0.2.0, add `vault_path: /absolute/path/to/your/vault` to your config file and run `/wiki:migrate`.
+
+### Migration from v0.2.0
+
+Run `/wiki:migrate` after upgrading. The migrate skill (backed by `wiki-migrate-agent`) detects your current schema version and applies any missing migration scripts automatically. It is idempotent -- safe to run multiple times.
+
+### Security
+
+`capture-url.sh` enforces HTTPS-only capture and rejects loopback addresses (`127.0.0.1`, `::1`), link-local ranges, and RFC1918 private IP ranges. Attempts to capture `file://`, `http://`, or cloud metadata endpoints (e.g. `169.254.169.254`) are blocked at the script level.
 
 ## Versioning
 
@@ -405,6 +418,8 @@ The plugin tracks schema versions to handle breaking changes gracefully:
 
 Migrations are sequential (`v0.1.0-to-v0.2.0`, then `v0.2.0-to-v0.3.0`) and idempotent. The bash script handles bulk deterministic changes; the agent handles intelligent adjustments that require reading page content.
 
+Current migration path: `0.1.0` → `0.2.0` → `0.3.0`. The v0.2.0→v0.3.0 migration adds the `vault_path` field to `wiki.config.md`. Run `/wiki:migrate` to apply.
+
 ## Contributing
 
 Contributions are welcome. The plugin is structured as:
@@ -412,9 +427,9 @@ Contributions are welcome. The plugin is structured as:
 ```
 llm-obsidian-wiki/
   .claude-plugin/plugin.json   # plugin metadata
-  skills/                       # 7 skill definitions (SKILL.md + references)
+  skills/                       # 8 skill definitions (SKILL.md + references)
   agents/                       # 5 agent definitions
-  scripts/                      # 16 bash utility scripts
+  scripts/                      # 17 bash utility scripts + scripts/lib/ (4 shared helpers)
   scripts/templates/            # 10 page templates
   scripts/migrations/           # versioned migration scripts
   SKILL.md                      # marketplace overview

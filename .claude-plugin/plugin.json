@@ -1,6 +1,6 @@
 {
   "name": "llm-obsidian-wiki",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Persistent, compounding knowledge base maintained by LLMs in Obsidian. Inspired by Karpathy's LLM Wiki pattern.",
   "author": {
     "name": "Ignat Romanov",

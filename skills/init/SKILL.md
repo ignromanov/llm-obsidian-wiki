@@ -1,7 +1,7 @@
 ---
 name: init
+version: 0.2.0
 description: "This skill should be used when a user wants to create a new LLM Wiki vault, initialize a knowledge base from scratch, set up a wiki project, or bootstrap a compounding knowledge base. Also triggers on: 'create wiki', 'new vault', 'init wiki', 'start knowledge base', 'set up wiki structure', or any mention of creating a Karpathy-style LLM Wiki."
-version: 0.1.0
 ---
 
 # Init — LLM Wiki Vault Wizard
@@ -9,6 +9,15 @@ version: 0.1.0
 Interactive wizard that scaffolds a complete LLM Wiki vault: directory structure, schema, config, and git repo. The vault follows the three-layer pattern: `raw/` (immutable sources) -> `wiki/` (LLM-maintained pages) -> `CLAUDE.md` (schema).
 
 All generated files use Obsidian Flavored Markdown: wikilinks, YAML frontmatter, callouts.
+
+## Templates
+
+The init wizard uses templates in `skills/init/templates/`:
+- `claude-md-template.md` — boilerplate for `CLAUDE.md` in the vault (page types table, conventions, anti-patterns, optional extensions)
+- `obsidian-app.json` / `obsidian-core-plugins.json` — minimal Obsidian config enabling graph view, backlinks, and tag pane
+- `gitignore` — vault `.gitignore` (excludes workspace files, OS files, temp files)
+
+To customize defaults before running init, edit these templates in-place.
 
 ## Wizard Flow
 
@@ -135,118 +144,23 @@ $PROJECT_NAME/
 
 ### 2. CLAUDE.md
 
-Generate tailored to chosen `$PAGE_TYPES` and `$CAPTURE_TOOLS`:
-
-```markdown
-# $PROJECT_NAME — LLM Wiki
-
-> Schema and operating instructions for LLM agents maintaining this wiki.
-> Source of truth: `wiki.config.md`
-
-## Architecture
-
-Three layers, strict data flow:
-
-| Layer | Path | Mutability | Owner |
-|-------|------|------------|-------|
-| Raw Sources | `raw/` | Immutable after ingest | Human + capture tools |
-| Wiki Pages | `wiki/` | LLM-maintained | LLM agents |
-| Schema | `CLAUDE.md` | Human-approved; LLM may propose changes | Human + LLM co-evolve |
-
-**Flow**: raw/ --> wiki/ --> CLAUDE.md (references back)
-
-## Page Types
-
-Every wiki page MUST have `type` in YAML frontmatter.
-
-| Type | Template | Use When |
-|------|----------|----------|
-$PAGE_TYPE_TABLE
-
-## Frontmatter Schema
-
-All wiki pages require:
-
-```yaml
----
-type: $TYPE
-title: "Human-readable title"
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-status: draft | active | stale | superseded
-tldr: "One paragraph summary for progressive disclosure"
-sources:
-  - "[[raw/path/to/source]]"
-tags:
-  - tag1
-  - tag2
----
-```
-
-## Conventions
-
-- **Wikilinks**: Use `[[page-name]]` for all internal links, never markdown links
-- **TLDR**: Every page has a `tldr:` frontmatter property (one paragraph summary). Set via `obsidian property:set name=tldr`.
-- **Callouts**: Use Obsidian callouts for warnings, tips, questions
-  - `> [!question]` for open questions
-  - `> [!warning]` for caveats
-  - `> [!info]` for context
-- **Sources**: Every claim links back to `raw/` via `sources:` frontmatter
-- **Atomicity**: One concept per page. Concept and entity pages should be concise (~500 words). Synthesis, decision, and strategy pages may be longer.
-- **Naming**: lowercase-kebab-case for filenames, e.g. `wiki/transformer-architecture.md`
-
-## Raw Source Ingestion
-
-$CAPTURE_TOOLS_SECTION
-
-## Log Protocol
-
-After every wiki edit session, append to `log.md`:
-
-```markdown
-## YYYY-MM-DD — $SUMMARY
-- Created: [[page1]], [[page2]]
-- Updated: [[page3]]
-- Sources ingested: [[raw/path]]
-- Decisions: brief note
-```
-
-## Anti-Patterns
-
-| Pattern | Why Bad |
-|---------|---------|
-| Editing raw/ files | Raw is immutable — create a wiki page instead |
-| Wiki page without sources | Unverifiable claims, no provenance |
-| Markdown links instead of wikilinks | Breaks Obsidian graph view |
-| Pages without type frontmatter | Unclassified, breaks filtering |
-| Giant pages (>500 words) | Split into atomic pages + synthesis |
-
-## Optional Extensions
-
-These tools enhance the wiki workflow but are not required:
-
-- **[qmd](https://github.com/tobi/qmd)** — Local hybrid BM25/vector search for markdown. MCP server included. Useful as wiki grows beyond ~100 pages.
-- **[Marp](https://marp.app/)** — Generate slide decks from markdown wiki pages. Obsidian plugin available.
-- **[Dataview](https://github.com/blacksmithgu/obsidian-dataview)** — Query page frontmatter (tags, dates, status) with SQL-like syntax.
-- **[Obsidian Web Clipper](https://obsidian.md/clipper)** — Browser extension for quick article capture to raw/.
-```
-
-For the `$CAPTURE_TOOLS_SECTION`, generate instructions only for tools the user confirmed installed:
-
-- **defuddle**: `npx defuddle "$URL" > raw/external/$(date +%Y-%m-%d)-slug.md`
-- **yt-dlp**: `yt-dlp --write-auto-sub --sub-lang en --skip-download -o "raw/external/%(title)s" "$URL"`
-- **pandoc**: `pandoc -s input.pdf -t markdown -o raw/docs/output.md`
+Copy `skills/init/templates/claude-md-template.md` and substitute:
+- `$PROJECT_NAME` — the project name from Step 1
+- `$PAGE_TYPE_TABLE` — a markdown table row per selected page type (type | description | use-when)
+- `$CAPTURE_TOOLS_SECTION` — instructions only for tools confirmed installed in Step 4:
+  - **defuddle**: `npx defuddle "$URL" > raw/external/$(date +%Y-%m-%d)-slug.md`
+  - **yt-dlp**: `yt-dlp --write-auto-sub --sub-lang en --skip-download -o "raw/external/%(title)s" "$URL"`
+  - **pandoc**: `pandoc -s input.pdf -t markdown -o raw/docs/output.md`
 
 If no tools selected, write: "No capture tools configured. Add raw sources manually as markdown files."
 
 ### 3. wiki.config.md
 
-This is the key config file that all other skills read to understand vault structure, page types, and conventions.
-
 ```markdown
 ---
 project: $PROJECT_NAME
 version: "1.0"
+schema_version: "0.3.0"
 created: $TODAY
 page_types: [$PAGE_TYPES as YAML list]
 raw_dirs: [$RAW_DIRS as YAML list]
@@ -261,6 +175,7 @@ link_style: wikilink
 frontmatter: required
 statuses: [draft, active, stale, superseded]
 vault_name: $PROJECT_NAME
+vault_path: /absolute/path/to/$PROJECT_NAME
 plugin_root: /path/to/wiki/plugin
 ---
 
@@ -274,6 +189,8 @@ All LLM Wiki skills read this file to adapt behavior.
 Change YAML frontmatter values to reconfigure the wiki.
 Skills will pick up changes on next invocation.
 ```
+
+Note: both `vault_name` and `vault_path` are required fields (D1 dual-field contract). After creation, prompt the user to set `vault_path` to the absolute path of the vault and `plugin_root` to the plugin installation directory.
 
 ### 4. index.md
 
@@ -331,52 +248,12 @@ tags: [meta, log]
 
 ### 6. .gitignore
 
-```gitignore
-# Obsidian workspace (user-specific)
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
-.obsidian/appearance.json
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Temporary
-*.tmp
-*.swp
-```
+Copy `skills/init/templates/gitignore` to `$PROJECT_NAME/.gitignore` (with the dot prefix).
 
 ### 7. .obsidian/ Config
 
-Create `.obsidian/app.json`:
-
-```json
-{
-  "strictLineBreaks": false,
-  "showFrontmatter": true,
-  "defaultViewMode": "source",
-  "livePreview": true,
-  "readableLineLength": true
-}
-```
-
-Create `.obsidian/core-plugins.json`:
-
-```json
-[
-  "file-explorer",
-  "global-search",
-  "graph",
-  "backlink",
-  "outgoing-link",
-  "tag-pane",
-  "page-preview",
-  "templates",
-  "daily-notes",
-  "command-palette",
-  "editor-status"
-]
-```
+Copy `skills/init/templates/obsidian-app.json` to `$PROJECT_NAME/.obsidian/app.json`.
+Copy `skills/init/templates/obsidian-core-plugins.json` to `$PROJECT_NAME/.obsidian/core-plugins.json`.
 
 ### 8. Git Init
 
@@ -402,8 +279,9 @@ Files:
   log.md           — Change log (first entry recorded)
 
 Next steps:
-  1. Open the vault in Obsidian: open "$PROJECT_NAME"
-  2. Add your first raw source to raw/
-  3. Use /wiki:ingest to process raw sources into wiki pages
-  4. Use /wiki:lint to check wiki health
+  1. Set vault_path and plugin_root in wiki.config.md
+  2. Open the vault in Obsidian: open "$PROJECT_NAME"
+  3. Add your first raw source to raw/
+  4. Use /wiki:ingest to process raw sources into wiki pages
+  5. Use /wiki:lint to check wiki health
 ```

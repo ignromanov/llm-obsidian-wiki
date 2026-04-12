@@ -1,11 +1,16 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/usr/bin/env bash
 # Usage: find-unprocessed.sh <vault_path>
 # Lists raw files that don't have a corresponding wiki/sources/src-*.md.
 #
 # Detection: checks if any src-*.md references the raw file path
 # in its sources: frontmatter via property:read.
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/read-yaml-key.sh
+source "$SCRIPT_DIR/lib/read-yaml-key.sh"
 
 VAULT_PATH="${1:?Usage: find-unprocessed.sh <vault_path>}"
 
@@ -19,7 +24,7 @@ fi
 
 mkdir -p "$SOURCES_DIR"
 
-OBS_VAULT=$(awk '/^vault_name:/{print $2}' "${VAULT_PATH}/wiki.config.md" 2>/dev/null || echo "")
+OBS_VAULT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "vault_name")
 if [[ -z "$OBS_VAULT" ]]; then
   echo "Error: vault_name not found in wiki.config.md" >&2
   exit 1
@@ -27,14 +32,22 @@ fi
 
 # Build coverage set: all raw/ paths referenced in src-*.md sources: fields
 # property:read returns YAML list items like "- [[raw/path/file.md|Name]]"
-covered=$(obsidian vault="$OBS_VAULT" files folder="wiki/sources" < /dev/null 2>/dev/null \
-  | grep '^wiki/sources/src-' \
-  | while IFS= read -r src_path; do
-      obsidian vault="$OBS_VAULT" property:read name=sources path="$src_path" < /dev/null 2>/dev/null
-    done \
-  | grep -o 'raw/[^]|"]*' \
-  | sed 's/\.md$//' \
-  | sort -u)
+covered=""
+if covered_raw=$(
+  obsidian vault="$OBS_VAULT" files folder="wiki/sources" < /dev/null 2>/dev/null \
+    | grep '^wiki/sources/src-' \
+    | while IFS= read -r src_path; do
+        obsidian vault="$OBS_VAULT" property:read name=sources path="$src_path" < /dev/null 2>/dev/null || true
+      done \
+    | grep -o 'raw/[^]|"]*' \
+    | sed 's/\.md$//' \
+    | sort -u
+); then
+  covered="$covered_raw"
+else
+  echo "Warning: could not build coverage set from sources; assuming all unprocessed" >&2
+  covered=""
+fi
 
 TOTAL=0
 UNPROCESSED=0

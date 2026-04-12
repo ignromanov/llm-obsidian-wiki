@@ -1,11 +1,19 @@
-#!/bin/bash
-set -euo pipefail
-
+#!/usr/bin/env bash
 # Usage: capture-git-log.sh <repo_path> <vault_path> [since_date]
 # Example: capture-git-log.sh /path/to/voidpay /path/to/wiki 2026-04-08
+set -Eeuo pipefail
+shopt -s inherit_errexit
+umask 077
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+# shellcheck source=./lib/check-deps.sh
+source "$SCRIPT_DIR/lib/check-deps.sh"
+
+lib_check_deps git || exit 1
 
 REPO_PATH="${1:?Usage: capture-git-log.sh <repo_path> <vault_path> [since_date]}"
 VAULT="${2:?Usage: capture-git-log.sh <repo_path> <vault_path> [since_date]}"
+# BSD/GNU date portable: keep the good pattern
 SINCE="${3:-$(date -v-7d +%Y-%m-%d 2>/dev/null || date -d '7 days ago' +%Y-%m-%d)}"
 TODAY=$(date +%Y-%m-%d)
 RAW_DIR="${VAULT}/raw/inbox"

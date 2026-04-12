@@ -1,18 +1,38 @@
 ---
 name: lint
-version: 0.1.0
-description: "This skill should be used when the user wants to check wiki health, find orphaned or stale pages, detect contradictions, broken wikilinks, or perform wiki maintenance. Also use when the user says 'check wiki', 'find orphans', 'wiki cleanup', 'fix broken links', or 'wiki maintenance'. Triggers: checking wiki health, finding orphans, stale pages, contradictions, maintenance, cleanup. Keywords: lint, health, orphan, stale, contradiction, broken link, maintenance."
+version: 0.2.0
+description: "This skill should be used for WIKI HEALTH AND QUALITY CHECKS — find orphans, stale pages, broken wikilinks, contradictions, source-wiki drift, or run wiki maintenance/cleanup. Triggers: 'lint wiki', 'check wiki health', 'find orphans', 'stale pages', 'broken links', 'wiki cleanup', 'fix wiki', 'audit quality', 'wiki maintenance', 'contradiction check'. For metrics/counts (how many pages, coverage numbers) use the STATUS skill instead. For browsing content (what pages exist, reading content) use the BROWSE skill instead."
 ---
 
-# Lint — Wiki Health Check
+# Lint — Wiki Health and Quality Audit
+
+Run quality checks against the wiki: find structural issues (orphans, broken links, dead ends), content issues (stale pages, contradictions, shallow pages), and source drift. Optionally auto-fix structural issues with `--fix`, or run a deep re-read of raw sources with `--deep`.
+
+## When to Use This Skill (vs. Others)
+
+| Goal | Skill |
+|------|-------|
+| Find quality issues — orphans, stale, broken links, contradictions, drift | **LINT** (this skill) |
+| Get counts — how many pages, unprocessed sources, coverage percentages | **STATUS** |
+| Read/navigate wiki content — what pages exist, load context | **BROWSE** |
+
+If the user says "check wiki health", "find orphans", "fix broken links", "audit quality" → use LINT.
+If the user says "how many pages" or "wiki stats" → use STATUS.
+If the user says "show me the wiki" or "browse pages" → use BROWSE.
 
 ## Setup
 
-1. Read `wiki.config.md` at the vault root. Extract `vault_name` → `$VAULT`, `plugin_root` → `$PLUGIN_ROOT`.
-2. Determine the mode from the invocation:
-   - **Report** (default): `/wiki:lint` — report only, no file changes
-   - **Fix**: `/wiki:lint --fix` — report + auto-fix issues
-   - **Deep**: `/wiki:lint --deep` — re-read raw sources, check wiki drift, mark stale claims
+Read `wiki.config.md` at the vault root. Extract:
+- `vault_name` → store as `$VAULT_NAME` (for `obsidian vault="$VAULT_NAME"` commands)
+- `vault_path` → store as `$VAULT_PATH` (first positional argument to bash scripts)
+- `plugin_root` → store as `$PLUGIN_ROOT` (for scripts like `$PLUGIN_ROOT/scripts/wiki-health.sh`)
+
+Both `vault_name` and `vault_path` must be read. Use `scripts/lib/read-yaml-key.sh` if available. Export both before any script invocation.
+
+Determine the mode from the invocation:
+- **Report** (default): `/wiki:lint` — report only, no file changes
+- **Fix**: `/wiki:lint --fix` — report + auto-fix issues
+- **Deep**: `/wiki:lint --deep` — re-read raw sources, check wiki drift, mark stale claims
 
 ## Checks
 
@@ -21,7 +41,7 @@ description: "This skill should be used when the user wants to check wiki health
 Run the health script first — it covers orphans, broken links, dead ends, missing TLDR, and singleton tags in one call:
 
 ```bash
-$PLUGIN_ROOT/scripts/wiki-health.sh <vault_path>
+$PLUGIN_ROOT/scripts/wiki-health.sh "$VAULT_PATH"
 ```
 
 Output `[counts]`: `orphans`, `unresolved`, `deadends`, `missing_tldr`, `singleton_tags`.
@@ -29,9 +49,9 @@ Output `[counts]`: `orphans`, `unresolved`, `deadends`, `missing_tldr`, `singlet
 For verbose details on specific checks, use individual CLI commands:
 
 ```bash
-obsidian vault="$VAULT" orphans                         # list orphan pages
-obsidian vault="$VAULT" unresolved verbose               # broken links with sources
-obsidian vault="$VAULT" deadends                         # pages with no outgoing links
+obsidian vault="$VAULT_NAME" orphans                         # list orphan pages
+obsidian vault="$VAULT_NAME" unresolved verbose               # broken links with sources
+obsidian vault="$VAULT_NAME" deadends                         # pages with no outgoing links
 ```
 
 ### Manual checks (require reading pages)
@@ -66,14 +86,13 @@ Find pages containing `> [!warning]` callouts but no `relations:` entry with `ty
 
 #### Source Hash Drift
 
-For pages with `source_hashes:` in frontmatter, recompute `shasum -a 256` on each referenced raw file and compare. Mismatch = source changed since last ingest.
+For pages with `source_hashes:` in frontmatter, use `wiki-health.sh` to compare stored hashes against current raw source hashes. Mismatch means the raw source changed since last ingest.
 
 ```bash
-# Example check
-stored_hash=$(grep -A1 "path: \"$raw_path\"" "$page" | grep sha256 | awk '{print $2}' | tr -d '"')
-current_hash=$(shasum -a 256 "${VAULT_PATH}/${raw_path}" | awk '{print $1}')
-[[ "$stored_hash" != "$current_hash" ]] && echo "DRIFT: $page ← $raw_path"
+$PLUGIN_ROOT/scripts/wiki-health.sh "$VAULT_PATH" --check-hashes
 ```
+
+If `wiki-health.sh` does not support `--check-hashes` yet, manually iterate: for each `source_hashes` entry in a page's frontmatter, retrieve the stored `sha256` value and compare against the current file hash. Pages with hash mismatch should be marked `status: stale`.
 
 ### Growth Suggestions (report mode only)
 
@@ -136,7 +155,7 @@ When invoked with `--fix`, after reporting:
    ```
 4. **Index Drift** — Regenerate index and hubs:
    ```bash
-   $PLUGIN_ROOT/scripts/regenerate.sh <vault_path>
+   $PLUGIN_ROOT/scripts/regenerate.sh "$VAULT_PATH"
    ```
 
 5. **Source Hash Drift** — Mark drifted pages as `status: stale` and add `> [!warning] Source changed since last ingest — re-ingest recommended` callout.
