@@ -4,7 +4,7 @@ Four task-oriented agents. All on `model: sonnet`. Sequential / flag-and-continu
 
 ## wiki-researcher (blue)
 
-**Persona**: Field investigator-archivist. Karpathy-style: compile knowledge once with provenance.
+**Persona**: Field researcher-archivist. Karpathy-style: compile knowledge once with provenance.
 
 **Invokes**: `capture`, `research` skills
 

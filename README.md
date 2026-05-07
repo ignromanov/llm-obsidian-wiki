@@ -18,7 +18,7 @@
 
 LLMs lose all context between sessions. RAG systems re-derive knowledge from raw documents on every query, spending tokens to rediscover what was already known. In 2025, [Andrej Karpathy proposed](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) a different approach: have the LLM incrementally build and maintain a persistent wiki -- structured, interlinked markdown that compounds over time. The idea sparked a [400+ comment discussion](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) drawing on the Zettelkasten tradition and digital garden movement.
 
-This plugin turns that idea into a working system. It is a Claude Code plugin with **4 task-oriented agents**, 7 internal workflow skills, 2 slash commands, and ~25 utility scripts that automate the full capture / research / answer / audit / maintain loop inside an Obsidian vault. Knowledge is compiled once and kept current -- not re-derived on every query.
+This plugin turns that idea into a working system. It is a Claude Code plugin with **4 task-oriented agents**, 7 internal workflow skills, 2 slash commands, and 27 utility scripts that automate the full capture / research / answer / audit / maintain loop inside an Obsidian vault. Knowledge is compiled once and kept current -- not re-derived on every query.
 
 ## What's new in v0.4.0
 
@@ -231,28 +231,39 @@ All agents on `model: sonnet`. Sequential / flag-and-continue communication. Mos
 <details>
 <summary>Scripts reference</summary>
 
-17 utility scripts in `scripts/` (plus 4 shared helpers in `scripts/lib/`):
+27 utility scripts in `scripts/` (plus 5 shared helpers in `scripts/lib/`):
 
 | Script | Purpose |
 |--------|---------|
-| `init-vault.sh` | Create vault directory structure from config |
-| `capture-url.sh` | Capture web article via defuddle |
-| `capture-youtube.sh` | Capture YouTube transcript via yt-dlp |
-| `capture-github.sh` | Capture GitHub issue/PR/discussion/repo via gh |
-| `capture-prs.sh` | Batch capture merged PRs since a date |
 | `capture-git-log.sh` | Capture git commit history as markdown |
+| `capture-github.sh` | Capture GitHub issue/PR/discussion/repo via gh |
+| `capture-pdf.sh` | Capture PDF file to raw markdown |
+| `capture-prs.sh` | Batch capture merged PRs since a date |
+| `capture-text.sh` | Capture plain text / clipboard content |
+| `capture-url.sh` | Capture web article via defuddle → trafilatura → r.jina.ai |
+| `capture-youtube.sh` | Capture YouTube transcript via yt-dlp |
 | `create-page.sh` | Create wiki page from template |
+| `detect-contradictions.sh` | Find pages with conflicting claims |
+| `detect-stale.sh` | Find pages past forgetting-curve threshold |
+| `find-orphans.sh` | Find wiki pages with no backlinks |
 | `find-unprocessed.sh` | List raw files without source summaries |
+| `init-vault.sh` | Create vault directory structure from config |
 | `page-context.sh` | Get page metadata, backlinks, and outgoing links |
+| `promote-draft.sh` | Move page from _drafts/ to its target directory |
 | `regenerate.sh` | Regenerate index.md and _hub.md files |
 | `section-browse.sh` | List pages in a wiki section with TLDRs |
+| `split-hub.sh` | Split an overgrown hub into sub-hubs |
+| `supersede-page.sh` | Mark a page superseded and link to replacement |
+| `update-hot.sh` | Update rolling 500-word session cache (hot.md) |
 | `update-hubs.sh` | Update per-directory _hub.md files |
 | `update-index.sh` | Rebuild index.md from page TLDRs |
-| `wiki-health.sh` | Quick health check (orphans, broken links, dead ends) |
+| `verify-source-drift.sh` | Detect raw-file hash changes since page was written |
+| `verify-tree-topology.sh` | Check index ≤100 links and hubs ≤15 members |
+| `wiki-health.sh` | Aggregator: delegates to atomic check scripts |
 | `wiki-search.sh` | Search with inline TLDRs and related tags |
 | `wiki-stats.sh` | Vault totals, per-section counts, activity dates |
 
-Plus `scripts/lib/` (4 shared helpers: `read-yaml-key.sh`, `portable-hash.sh`, `canonical-path.sh`, `check-deps.sh`), `scripts/templates/` (10 page templates, one per type), and `scripts/migrations/` (versioned migration scripts).
+Plus `scripts/lib/` (5 shared helpers: `read-yaml-key.sh`, `portable-hash.sh`, `canonical-path.sh`, `check-deps.sh`, `url-safety.sh`), `scripts/templates/` (10 page templates, one per type), and `scripts/migrations/` (versioned migration scripts).
 
 </details>
 
@@ -296,16 +307,30 @@ relations:                 # v0.2.0 -- typed entity relations
 source_hashes:             # v0.2.0 -- provenance tracking
   - path: "raw/external/2026-04-11-article.md"
     sha256: "a1b2c3..."
-aliases:                   # optional -- alternative names for the page
+aliases:                   # v0.4.0 -- alternative names for the page
   - Alternative Title
+tier: 3                    # v0.4.0 -- importance score 0-5 (0=ephemeral, 5=cornerstone)
+cluster: ""                # v0.4.0 -- domain grouping (e.g. "auth", "infra")
+last_verified: 2026-04-11  # v0.4.0 -- ISO date of last content verification
+key_claims:                # v0.4.0 -- distilled claims (source pages only; channel to synthesis)
+  - "Claim text"
+superseded_by: ""          # v0.4.0 -- wikilink to replacement page (decision pages)
+supersedes: ""             # v0.4.0 -- wikilink to page this replaces
+quality: draft             # v0.4.0 -- draft | promoted | canonical (source pages)
+filed_from_query: ""       # v0.4.0 -- query that produced this synthesis page
+captured_by: ""            # v0.4.0 -- agent that created the page (provenance)
 ---
 ```
 
 ### Schema versioning
 
-The vault tracks its schema version in `wiki.config.md` via the `schema_version` field. When the plugin updates, the `wiki-migrate-agent` compares the vault's schema version against the plugin version and runs migration scripts in sequence (e.g., `v0.1.0-to-v0.2.0.sh`). Migrations are idempotent -- running them twice is safe.
+The vault tracks its schema version in `wiki.config.md` via the `schema_version` field. When the plugin updates, **wiki-curator** (migrate skill) compares the vault's schema version against the plugin version and runs migration scripts in sequence. Migrations are idempotent -- running them twice is safe.
 
-Current migration path: `0.1.0` -> `0.2.0` (adds `confidence`, `relations`, `source_hashes` fields; adds counter-arguments sections to concept pages).
+Current migration path: `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0`. To migrate say `"migrate the wiki"` (routes to wiki-curator), or invoke the script directly:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh --vault /path/to/vault
+```
 
 </details>
 
@@ -349,7 +374,7 @@ Key fields in the YAML frontmatter:
 Edit the YAML frontmatter values directly. Skills pick up changes on next invocation.
 
 > [!IMPORTANT]
-> **v0.3.0 breaking change:** `wiki.config.md` now requires BOTH `vault_name` AND `vault_path`. If you are upgrading from v0.2.0, add `vault_path: /absolute/path/to/your/vault` to your config file and run `/wiki:migrate`.
+> **v0.3.0 breaking change:** `wiki.config.md` now requires BOTH `vault_name` AND `vault_path`. If you are upgrading from v0.2.0, add `vault_path: /absolute/path/to/your/vault` to your config file and say `"migrate the wiki"` (routes to wiki-curator).
 
 ### Migration from v0.3.0
 
@@ -363,7 +388,7 @@ See `docs/migration-v0.3.0-to-v0.4.0.md` for a full list of changes (new agent d
 
 ### Migration from v0.2.0
 
-Run `/wiki:migrate` after upgrading. The migrate skill (backed by `wiki-migrate-agent`) detects your current schema version and applies any missing migration scripts automatically. It is idempotent -- safe to run multiple times.
+Say `"migrate the wiki"` after upgrading. wiki-curator (migrate skill) detects your current schema version and applies any missing migration scripts automatically. It is idempotent -- safe to run multiple times.
 
 ### Security
 
@@ -375,11 +400,11 @@ The plugin tracks schema versions to handle breaking changes gracefully:
 
 1. `wiki.config.md` stores `schema_version` (the vault's current schema)
 2. `plugin.json` stores `version` (the plugin's expected schema)
-3. When they differ, the `wiki-migrate-agent` bridges the gap by running versioned migration scripts from `scripts/migrations/`
+3. When they differ, **wiki-curator** (migrate skill) bridges the gap by running versioned migration scripts from `scripts/migrations/`
 
-Migrations are sequential (`v0.1.0-to-v0.2.0`, then `v0.2.0-to-v0.3.0`) and idempotent. The bash script handles bulk deterministic changes; the agent handles intelligent adjustments that require reading page content.
+Migrations are sequential and idempotent. The bash script handles bulk deterministic changes; the agent handles intelligent adjustments that require reading page content.
 
-Current migration path: `0.1.0` → `0.2.0` → `0.3.0`. The v0.2.0→v0.3.0 migration adds the `vault_path` field to `wiki.config.md`. Run `/wiki:migrate` to apply.
+Current migration path: `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0`. Say `"migrate the wiki"` to invoke wiki-curator, or run the migration script directly.
 
 ## Contributing
 
@@ -388,9 +413,9 @@ Contributions are welcome. The plugin is structured as:
 ```
 llm-obsidian-wiki/
   .claude-plugin/plugin.json   # plugin metadata
-  skills/                       # 8 skill definitions (SKILL.md + references)
-  agents/                       # 5 agent definitions
-  scripts/                      # 17 bash utility scripts + scripts/lib/ (4 shared helpers)
+  skills/                       # 7 skill definitions (SKILL.md + references)
+  agents/                       # 4 agent definitions
+  scripts/                      # 27 bash utility scripts + scripts/lib/ (5 shared helpers)
   scripts/templates/            # 10 page templates
   scripts/migrations/           # versioned migration scripts
   SKILL.md                      # marketplace overview

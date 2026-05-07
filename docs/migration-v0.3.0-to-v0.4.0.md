@@ -33,7 +33,7 @@ uv tool install trafilatura   # new fallback web→md extractor
 ## Run the vault migration
 
 ```bash
-$PLUGIN_ROOT/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh --vault /path/to/your/vault
+${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh --vault /path/to/your/vault
 ```
 
 For vaults >1GB add `--confirm-backup`.
@@ -78,6 +78,42 @@ mv /path/to/vault.bak.v0.3.0 /path/to/vault
 ```
 
 Then pin plugin version `@0.3.0` until you decide to retry.
+
+## Removed components
+
+The following components were removed in v0.4.0. Their functionality is preserved via agents + internal skills.
+
+### Agents removed (5)
+
+| Removed | Replacement |
+|---|---|
+| `wiki-capture-agent` | `wiki-scribe` or `wiki-researcher` (capture skill) |
+| `wiki-ingest-agent` | `wiki-researcher` (research skill) |
+| `wiki-query-agent` | `wiki-advisor` (answer skill) |
+| `wiki-lint-agent` | `wiki-curator` (audit + maintain skills) |
+| `wiki-migrate-agent` | `wiki-curator` (migrate skill) |
+
+### Skills removed (6)
+
+| Removed | Replacement |
+|---|---|
+| `capture` (v0.3 form) | `capture` skill (rewritten; invoked by scribe + researcher) |
+| `ingest` | `research` skill (wiki-researcher) |
+| `query` | `answer` skill (wiki-advisor) |
+| `browse` | `answer` skill + `section-browse.sh` |
+| `lint` | `audit` + `maintain` skills (wiki-curator) |
+| `status` | `/wiki:status` command |
+
+### Slash commands removed (6)
+
+| Removed | Replacement |
+|---|---|
+| `/wiki:capture` | `"save this URL: ..."` (wiki-scribe) |
+| `/wiki:ingest` | `"research X"` (wiki-researcher) |
+| `/wiki:query` | `"what did we decide about X"` (wiki-advisor) |
+| `/wiki:browse` | `"what does the wiki say about X"` (wiki-advisor) |
+| `/wiki:lint` | `"clean up the wiki"` (wiki-curator) |
+| `/wiki:migrate` | `"migrate the wiki"` (wiki-curator) |
 
 ## Common questions
 

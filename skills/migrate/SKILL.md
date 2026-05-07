@@ -68,7 +68,7 @@ Used by wiki-curator.
 
 ## Scripts used
 
-- `${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.1.0-to-v0.2.0/migrate.sh`
-- `${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.2.0-to-v0.3.0/migrate.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.1.0-to-v0.2.0.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.2.0-to-v0.3.0.sh`
 - `${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh`
 - After: `audit` skill for verification
