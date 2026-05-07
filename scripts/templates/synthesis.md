@@ -10,6 +10,11 @@ tags:
   - synthesis
 sources: []
 relations: []
+tier: 5
+cluster: "{{CLUSTER}}"
+last_verified: {{DATE}}
+filed_from_query: null
+key_claims: []
 aliases:
   - "{{TITLE}}"
 ---
