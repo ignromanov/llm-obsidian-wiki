@@ -39,7 +39,11 @@ For vaults >1GB, add `--confirm-backup`.
 
 ## Rollback
 
+If the migration fails or you want to revert:
+
 ```bash
-rm -rf /path/to/vault
+mv /path/to/vault /path/to/vault.broken
 mv /path/to/vault.bak.v0.3.0 /path/to/vault
 ```
+
+**Do not `rm -rf` the live vault before the backup move is complete.** The two-step `mv` pattern is safe even if interrupted — the backup is never destroyed before the live vault is moved aside.

@@ -84,4 +84,39 @@ echo "$out" | grep -q "Already on 0.4.0" \
 duplicate_tier=$(grep -c '^tier:' "$WORK/vault/wiki/concepts/clerk.md" | tr -d ' ')
 [[ "$duplicate_tier" == "1" ]] || { echo "FAIL: tier appeared $duplicate_tier times after re-run"; exit 1; }
 
+# md5 idempotency: content identical before and after a second re-run
+md5_before=$(find "$WORK/vault/wiki" -name "*.md" | sort | xargs cat | md5sum | awk '{print $1}')
+"$PLUGIN_ROOT/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh" --vault "$WORK/vault" >/dev/null 2>&1 || true
+md5_after=$(find "$WORK/vault/wiki" -name "*.md" | sort | xargs cat | md5sum | awk '{print $1}')
+[[ "$md5_before" == "$md5_after" ]] \
+  || { echo "FAIL: md5 changed after idempotent re-run"; exit 1; }
+
+# Backup file count matches fixture wiki .md count
+fixture_md_count=$(find "$PLUGIN_ROOT/tests/fixtures/v0.3.0-vault/wiki" -name "*.md" | wc -l | tr -d ' ')
+backup_md_count=$(find "$WORK/vault.bak.v0.3.0/wiki" -name "*.md" | wc -l | tr -d ' ')
+[[ "$fixture_md_count" -eq "$backup_md_count" ]] \
+  || { echo "FAIL: backup has $backup_md_count wiki .md files, fixture has $fixture_md_count"; exit 1; }
+
+# Per-page YAML validation: every well-formed wiki/*.md must have all four base
+# fields in frontmatter after migration (excluding _logs, _drafts, hot.md, and
+# pages that were intentionally malformed — those are skipped by the migrator).
+while IFS= read -r page; do
+  # Skip pages that lack a valid frontmatter block (migrator skips these too)
+  delim_count=$(grep -c '^---$' "$page" | tr -d ' ')
+  [[ "$delim_count" -ge 2 ]] || continue
+  for field in tier cluster aliases last_verified; do
+    found=$(awk -v key="^${field}:" '
+      /^---$/ { c++; if (c == 2) exit }
+      c == 1 && $0 ~ key { found=1; exit }
+      END { print found+0 }
+    ' "$page")
+    [[ "$found" == "1" ]] \
+      || { echo "FAIL: $page missing frontmatter field '$field' after migration"; exit 1; }
+  done
+done < <(find "$WORK/vault/wiki" -name "*.md" \
+           -not -path "*/_drafts/*" \
+           -not -path "*/_logs/*" \
+           -not -name "hot.md" \
+           -type f)
+
 echo "smoke-migrate: OK"

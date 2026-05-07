@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # v0.3.0 → v0.4.0 vault schema migration. Idempotent, backup-first.
 set -Eeuo pipefail
-shopt -s inherit_errexit 2>/dev/null || true
+[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,7 +9,33 @@ PLUGIN_LIB="$SCRIPT_DIR/../../lib"
 # shellcheck source=../../lib/read-yaml-key.sh
 . "$PLUGIN_LIB/read-yaml-key.sh"
 
-VAULT_PATH=""; CONFIRM_BACKUP=0
+# ── Globals set during arg-parse, referenced in cleanup ──────────────────────
+VAULT_PATH=""
+BACKUP=""
+
+# P0-4: trap ERR/INT/TERM — clean .tmp debris and print rollback hint on failure
+cleanup_on_error() {
+  local rc=$?
+  if [[ -n "${VAULT_PATH:-}" && -d "$VAULT_PATH" ]]; then
+    find "$VAULT_PATH" -name '*.tmp' -delete 2>/dev/null || true
+  fi
+  if [[ $rc -ne 0 && -n "${BACKUP:-}" && -d "$BACKUP" ]]; then
+    cat >&2 <<EOF
+
+Migration FAILED (exit $rc).
+Restore from backup:
+  mv "$VAULT_PATH" "${VAULT_PATH}.broken"
+  mv "$BACKUP" "$VAULT_PATH"
+
+Backup is at: $BACKUP
+EOF
+  fi
+  exit $rc
+}
+trap cleanup_on_error ERR INT TERM
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+CONFIRM_BACKUP=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --vault) VAULT_PATH="$2"; shift 2 ;;
@@ -24,13 +50,14 @@ done
 CONFIG="$VAULT_PATH/wiki.config.md"
 [[ -f "$CONFIG" ]] || { echo "wiki.config.md missing" >&2; exit 1; }
 
+# ── Precondition check (step 1) ───────────────────────────────────────────────
 CURRENT=$(lib_read_yaml_key "$CONFIG" "schema_version" || echo "")
 if [[ "$CURRENT" == "0.4.0" ]]; then
   echo "Already on 0.4.0, no-op"; exit 0
 fi
 [[ "$CURRENT" == "0.3.0" ]] || { echo "expected 0.3.0, got $CURRENT" >&2; exit 1; }
 
-# Backup with size check
+# ── Backup (step 2) ───────────────────────────────────────────────────────────
 SIZE_KB=$(du -sk "$VAULT_PATH" | awk '{print $1}')
 SIZE_MB=$((SIZE_KB / 1024))
 echo "Vault size: ${SIZE_MB}MB"
@@ -40,10 +67,11 @@ if [[ "$SIZE_MB" -gt 1024 && "$CONFIRM_BACKUP" -eq 0 ]]; then
 fi
 BACKUP="${VAULT_PATH}.bak.v0.3.0"
 [[ -d "$BACKUP" ]] && { echo "backup already exists: $BACKUP" >&2; exit 1; }
-cp -rf "$VAULT_PATH" "$BACKUP"
+# P1: cp -aRf preserves symlinks-as-symlinks and file attributes
+cp -aRf "$VAULT_PATH" "$BACKUP"
 echo "Backup → $BACKUP"
 
-# Add new dirs
+# ── Structural additions ──────────────────────────────────────────────────────
 mkdir -p "$VAULT_PATH/wiki/_drafts" "$VAULT_PATH/wiki/contradictions" "$VAULT_PATH/wiki/_logs"
 
 # Seed hot.md
@@ -65,14 +93,7 @@ window_size_words: 500
 HOT
 chmod 600 "$VAULT_PATH/wiki/hot.md"
 
-# Bump schema_version (use awk for portability vs sed -i which differs BSD/GNU)
-TMP=$(mktemp)
-awk '
-  /^schema_version:[[:space:]]*0\.3\.0[[:space:]]*$/ { print "schema_version: 0.4.0"; next }
-  { print }
-' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
-
-# Append new sections if absent
+# Append new config sections if absent
 if ! grep -q "^## Tree topology thresholds" "$CONFIG"; then
   cat >> "$CONFIG" <<'CFG'
 
@@ -90,18 +111,19 @@ if ! grep -q "^## Tree topology thresholds" "$CONFIG"; then
 CFG
 fi
 
-# Per-page migration
-LOG="$VAULT_PATH/wiki/_logs/migration-v0.4.0-$(date -u +%Y%m%d-%H%M%S).md"
-mkdir -p "$(dirname "$LOG")"
-{
-  echo "# v0.3.0 → v0.4.0 migration log"
-  echo "Started: $NOW"
-  echo
-} > "$LOG"
+# ── Helper: check if $key exists in YAML frontmatter only (P0-1) ─────────────
+yaml_has_key() {
+  local file="$1" key="$2"
+  awk -v key="^${key}:" '
+    /^---$/ { c++; if (c == 2) exit }
+    c == 1 && $0 ~ key { found = 1; exit }
+    END { exit !found }
+  ' "$file"
+}
 
 inject_field_if_missing() {
   local file="$1" key="$2" value="$3"
-  if grep -q "^$key:" "$file"; then return 0; fi
+  if yaml_has_key "$file" "$key"; then return 0; fi
   awk -v k="$key" -v v="$value" '
     BEGIN { count=0; injected=0 }
     /^---$/ {
@@ -137,8 +159,26 @@ infer_cluster() {
   esac
 }
 
-PAGE_COUNT=0; FIELD_COUNT=0; SKIPPED=0
+# ── Per-page migration (step 3) ───────────────────────────────────────────────
+LOG="$VAULT_PATH/wiki/_logs/migration-v0.4.0-$(date -u +%Y%m%d-%H%M%S).md"
+mkdir -p "$(dirname "$LOG")"
+{
+  echo "# v0.3.0 → v0.4.0 migration log"
+  echo "Started: $NOW"
+  echo
+} > "$LOG"
+
+PAGE_COUNT=0; FIELD_COUNT=0; SKIPPED=0; MALFORMED=0
 while IFS= read -r page; do
+  # P0-5: require at least two ^---$ lines (opening + closing delimiter)
+  delim_count=$(grep -c '^---$' "$page" 2>/dev/null || echo 0)
+  if [[ "$delim_count" -lt 2 ]]; then
+    MALFORMED=$((MALFORMED + 1))
+    echo "- skipped (malformed YAML, <2 delimiters): ${page#"$VAULT_PATH"/}" >> "$LOG"
+    echo "  warn: skipped malformed YAML: ${page#"$VAULT_PATH"/}" >&2
+    continue
+  fi
+  # Legacy skip-counter still increments for pages with no delimiter at all
   if ! grep -q '^---$' "$page" 2>/dev/null; then
     SKIPPED=$((SKIPPED + 1))
     echo "- skipped (no YAML frontmatter): ${page#"$VAULT_PATH"/}" >> "$LOG"
@@ -151,7 +191,7 @@ while IFS= read -r page; do
   CREATED=$(lib_read_yaml_key "$page" "created" || echo "")
   [[ -n "$CREATED" ]] || CREATED=$(date -u +%Y-%m-%d)
 
-  before=$(grep -c '^[a-z_]*:' "$page" 2>/dev/null || echo 0)
+  fields_before=$(grep -c '^[a-z_]*:' "$page" 2>/dev/null || echo 0)
   inject_field_if_missing "$page" "tier" "$TIER"
   inject_field_if_missing "$page" "cluster" "$CLUSTER"
   inject_field_if_missing "$page" "aliases" "[]"
@@ -171,24 +211,50 @@ while IFS= read -r page; do
       inject_field_if_missing "$page" "filed_from_query" "null"
       ;;
   esac
-  after=$(grep -c '^[a-z_]*:' "$page" 2>/dev/null || echo 0)
-  FIELD_COUNT=$((FIELD_COUNT + after - before))
+
+  fields_after=$(grep -c '^[a-z_]*:' "$page" 2>/dev/null || echo 0)
+  delta=$((fields_after - fields_before))
+  FIELD_COUNT=$((FIELD_COUNT + delta))
+  # P1: per-page injection log for non-zero deltas
+  if [[ "$delta" -gt 0 ]]; then
+    echo "- ${page#"$VAULT_PATH"/}: +${delta} fields" >> "$LOG"
+  fi
 done < <(find "$VAULT_PATH/wiki" -name "*.md" -not -path "*/_drafts/*" -not -path "*/_logs/*" -type f)
 
+# ── Bump schema_version LAST, after all pages succeed (P0-3) ─────────────────
+# P0-2: regex accepts both bare and quoted form: schema_version: 0.3.0 OR "0.3.0"
+TMP=$(mktemp)
+awk '
+  /^schema_version:[[:space:]]*"?'"'"'?0\.3\.0"?'"'"'?[[:space:]]*$/ {
+    print "schema_version: 0.4.0"; next
+  }
+  { print }
+' "$CONFIG" > "$TMP" && mv "$TMP" "$CONFIG"
+
+# P1: post-condition — verify the bump actually landed
+NEW_VER=$(lib_read_yaml_key "$CONFIG" "schema_version" || echo "")
+[[ "$NEW_VER" == "0.4.0" ]] || {
+  echo "FATAL: schema_version bump failed — got '$NEW_VER' after write" >&2
+  exit 1
+}
+
+# ── Write summary to log ──────────────────────────────────────────────────────
 {
   echo
   echo "## Summary"
   echo "- Pages migrated: $PAGE_COUNT"
   echo "- Fields added: $FIELD_COUNT"
-  echo "- Pages skipped: $SKIPPED"
+  echo "- Pages skipped (no frontmatter): $SKIPPED"
+  echo "- Pages skipped (malformed YAML): $MALFORMED"
   echo "- Backup: $BACKUP"
 } >> "$LOG"
 
 echo
 echo "Migration complete:"
-echo "  Pages migrated: $PAGE_COUNT"
-echo "  Fields added: $FIELD_COUNT"
-echo "  Pages skipped: $SKIPPED"
+echo "  Pages migrated:               $PAGE_COUNT"
+echo "  Fields added:                 $FIELD_COUNT"
+echo "  Pages skipped (no frontmatter): $SKIPPED"
+echo "  Pages skipped (malformed YAML): $MALFORMED"
 echo "  Log: $LOG"
 echo "  Backup: $BACKUP"
 echo
