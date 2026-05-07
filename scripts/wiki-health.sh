@@ -27,9 +27,10 @@ done
 P0=0; P1=0; P2=0
 
 run_check() {
-  local label="$1" severity="$2" cmd="$3"
+  local label="$1" severity="$2"
+  shift 2
   echo "=== $label ==="
-  if eval "$cmd"; then
+  if "$@"; then
     return 0
   else
     case "$severity" in
@@ -40,11 +41,11 @@ run_check() {
   fi
 }
 
-run_check "Source drift"   "P0" "$SCRIPT_DIR/verify-source-drift.sh --vault \"$VAULT_PATH\""
-run_check "Tree topology"  "P1" "$SCRIPT_DIR/verify-tree-topology.sh --vault \"$VAULT_PATH\""
-run_check "Orphans"        "P2" "$SCRIPT_DIR/find-orphans.sh --vault \"$VAULT_PATH\""
-run_check "Stale pages"    "P2" "$SCRIPT_DIR/detect-stale.sh --vault \"$VAULT_PATH\""
-run_check "Contradictions" "P1" "$SCRIPT_DIR/detect-contradictions.sh --vault \"$VAULT_PATH\""
+run_check "Source drift"   "P0" bash "$SCRIPT_DIR/verify-source-drift.sh"   --vault "$VAULT_PATH"
+run_check "Tree topology"  "P1" bash "$SCRIPT_DIR/verify-tree-topology.sh"  --vault "$VAULT_PATH"
+run_check "Orphans"        "P2" bash "$SCRIPT_DIR/find-orphans.sh"           --vault "$VAULT_PATH"
+run_check "Stale pages"    "P2" bash "$SCRIPT_DIR/detect-stale.sh"           --vault "$VAULT_PATH"
+run_check "Contradictions" "P1" bash "$SCRIPT_DIR/detect-contradictions.sh" --vault "$VAULT_PATH"
 
 echo
 echo "=== Health summary ==="

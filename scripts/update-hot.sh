@@ -91,7 +91,7 @@ while IFS= read -r line; do
         # Pass through up to MAX_BULLETS bullets
         if [[ "$line" =~ ^-[[:space:]] ]]; then
           section_count=$((section_count + 1))
-          if [[ $section_count -le $MAX_BULLETS ]]; then
+          if [[ $section_count -lt $MAX_BULLETS ]]; then
             echo "$line" >> "$TMP"
           fi
         else
