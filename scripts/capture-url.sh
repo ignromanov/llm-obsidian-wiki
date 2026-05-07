@@ -76,20 +76,59 @@ TITLE=""
 AUTHOR=""
 CONTENT=""
 
-if command -v defuddle &>/dev/null; then
-  JSON=$(timeout 60 defuddle parse "$URL" --json) || { echo "ERROR: defuddle failed or timed out" >&2; exit 3; }
-  TITLE=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null || echo "")
-  AUTHOR=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('author',''))" 2>/dev/null || echo "")
-  CONTENT=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null || echo "")
-else
-  echo "defuddle not found, falling back to curl + pandoc" >&2
-  if ! command -v pandoc &>/dev/null; then
-    echo "Error: neither defuddle nor pandoc found" >&2
-    exit 1
+# Portable timeout wrapper (macOS lacks `timeout` by default).
+# Usage: maybe_timeout 60 some-cmd args... — if neither timeout nor gtimeout is
+# available, falls through to running the command without any limit.
+maybe_timeout() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$@"
+  else
+    shift  # drop the seconds arg
+    "$@"
   fi
-  CONTENT=$(curl --fail --max-time 60 --max-filesize 10M --proto '=https' --proto-default https -sSL "$URL" | pandoc -f html -t markdown)
-  # Extract title from first H1 if present
-  TITLE=$(echo "$CONTENT" | grep -m1 '^# ' | sed 's/^# //' || echo "")
+}
+
+# Primary: defuddle (best signal-to-noise on blogs/articles)
+if command -v defuddle &>/dev/null; then
+  JSON=$(maybe_timeout 60 defuddle parse "$URL" --json 2>/dev/null) || JSON=""
+  if [[ -n "$JSON" ]]; then
+    TITLE=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null || echo "")
+    AUTHOR=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('author',''))" 2>/dev/null || echo "")
+    CONTENT=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null || echo "")
+  fi
+fi
+
+# Fallback A: trafilatura (replaces pandoc — cleaner output, local-only)
+if [[ -z "$CONTENT" ]] || [[ ${#CONTENT} -lt 500 ]]; then
+  if command -v trafilatura >/dev/null 2>&1; then
+    TRAF_OUT=$(maybe_timeout 60 trafilatura -u "$URL" \
+      --output-format markdown \
+      --with-metadata \
+      --no-tables \
+      --precision 2>/dev/null || echo "")
+    if [[ ${#TRAF_OUT} -gt ${#CONTENT} ]]; then
+      CONTENT="$TRAF_OUT"
+      [[ -z "$TITLE" ]] && TITLE=$(echo "$CONTENT" | grep -m1 '^# ' | sed 's/^# //' || echo "")
+    fi
+  fi
+fi
+
+# Fallback B: r.jina.ai cloud (opt-in only via WIKI_ALLOW_CLOUD=1)
+if [[ ${#CONTENT} -lt 500 && "${WIKI_ALLOW_CLOUD:-0}" == "1" ]]; then
+  CLOUD_OUT=$(curl -sSL --max-time 30 "https://r.jina.ai/$URL" 2>/dev/null || echo "")
+  if [[ ${#CLOUD_OUT} -gt ${#CONTENT} ]]; then
+    CONTENT="$CLOUD_OUT"
+    [[ -z "$TITLE" ]] && TITLE=$(echo "$CONTENT" | grep -m1 '^# ' | sed 's/^# //' || echo "")
+  fi
+fi
+
+# Hard-fail only if ALL three extractors failed
+if [[ -z "$CONTENT" ]]; then
+  echo "ERROR: extraction failed (defuddle / trafilatura / r.jina.ai). Use capture-text.sh for manual content." >&2
+  echo "Install: 'npm i -g defuddle-cli' AND 'uv tool install trafilatura'" >&2
+  exit 3
 fi
 
 # Fallback title from URL if empty
