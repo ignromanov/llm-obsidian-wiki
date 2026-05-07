@@ -78,7 +78,7 @@ $ claude
   Files: CLAUDE.md, wiki.config.md, index.md, hot.md, log.md
   Next: open the vault in Obsidian, add your first source.
 
-> "исследуй karpathy llm wiki pattern"
+> "research karpathy llm wiki pattern"
 
   [wiki-researcher]
   Capturing: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
@@ -90,7 +90,7 @@ $ claude
   Created: wiki/concepts/compounding-knowledge.md
   Updated: index.md, hot.md, log.md
 
-> "как compounding knowledge отличается от RAG?"
+> "how does compounding knowledge differ from RAG?"
 
   [wiki-advisor]
   Searching wiki... 3 pages found, reading 2...
@@ -103,7 +103,7 @@ $ claude
 
   Sources: [[src-karpathy-llm-wiki-pattern]], [[compounding-knowledge]]
 
-> "наведи порядок"
+> "clean up the wiki"
 
   [wiki-curator]
   Running health checks...
@@ -118,9 +118,9 @@ $ claude
 
 1. **Install** the plugin (see [Install](#install))
 2. **`/wiki:init`** -- interactive wizard scaffolds the vault structure, CLAUDE.md schema, and config
-3. **`"исследуй <topic>"`** -- wiki-researcher captures sources and compiles wiki pages
-4. **`"что мы решили про <topic>?"`** -- wiki-advisor answers with `[[wikilink]]` citations
-5. **`"наведи порядок"`** -- wiki-curator audits health and fixes issues
+3. **`"research <topic>"`** -- wiki-researcher captures sources and compiles wiki pages
+4. **`"what did we decide about <topic>?"`** -- wiki-advisor answers with `[[wikilink]]` citations
+5. **`"clean up the wiki"`** -- wiki-curator audits health and fixes issues
 6. **`"save this URL: <url>"`** -- wiki-scribe captures verbatim, no interpretation
 
 ## Architecture
@@ -221,10 +221,10 @@ Everything else (capture, research, answer, audit, maintain, migrate) is handled
 
 | Agent | Persona | When to invoke |
 |---|---|---|
-| **wiki-researcher** | Полевой исследователь-архивист. Karpathy-style: compile knowledge once with provenance | "исследуй X", "investigate Y", "build write-up about Z" |
-| **wiki-advisor** | Senior consultant. Reads only `wiki/`, always cites with `[[wikilinks]]` | "что мы решили про X", "answer from wiki", "what does the wiki say" |
-| **wiki-curator** | Librarian-archaeologist. Lint, drift detection, supersession, hub split, schema migration | "наведи порядок", "audit health", "fix issues", "migrate schema" |
-| **wiki-scribe** | Court-reporter. Passive intake — preserves verbatim, no interpretation | "save this URL/PDF/clipboard", "запиши это" |
+| **wiki-researcher** | Field researcher-archivist. Karpathy-style: compile knowledge once with provenance | "research X", "investigate Y", "build write-up about Z" |
+| **wiki-advisor** | Senior consultant. Reads only `wiki/`, always cites with `[[wikilinks]]` | "what did we decide about X", "answer from wiki", "what does the wiki say" |
+| **wiki-curator** | Librarian-archaeologist. Lint, drift detection, supersession, hub split, schema migration | "clean up the wiki", "audit health", "fix issues", "migrate schema" |
+| **wiki-scribe** | Court-reporter. Passive intake — preserves verbatim, no interpretation | "save this URL/PDF/clipboard", "save this" |
 
 All agents on `model: sonnet`. Sequential / flag-and-continue communication. Most agent functions are triggered by natural language — no slash command needed.
 

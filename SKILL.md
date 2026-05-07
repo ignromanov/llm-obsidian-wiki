@@ -11,10 +11,10 @@ description: "Karpathy's LLM Wiki pattern as a Claude Code plugin — agent-firs
 
 | Agent | Persona | When to invoke |
 |---|---|---|
-| **wiki-researcher** | Полевой исследователь-архивист. Karpathy-style: compile knowledge once with provenance | "исследуй X", "investigate Y", "build write-up about Z" |
-| **wiki-advisor** | Senior consultant. Reads only `wiki/`, always cites with `[[wikilinks]]` | "что мы решили про X", "answer from wiki", "what does the wiki say" |
-| **wiki-curator** | Librarian-archaeologist. Lint, drift detection, supersession, hub split, schema migration | "наведи порядок", "audit health", "fix issues", "migrate schema" |
-| **wiki-scribe** | Court-reporter. Passive intake — preserves verbatim, no interpretation | "save this URL/PDF/clipboard", "запиши это" |
+| **wiki-researcher** | Field researcher-archivist. Karpathy-style: compile knowledge once with provenance | "research X", "investigate Y", "build write-up about Z" |
+| **wiki-advisor** | Senior consultant. Reads only `wiki/`, always cites with `[[wikilinks]]` | "what did we decide about X", "answer from wiki", "what does the wiki say" |
+| **wiki-curator** | Librarian-archaeologist. Lint, drift detection, supersession, hub split, schema migration | "clean up the wiki", "audit health", "fix issues", "migrate schema" |
+| **wiki-scribe** | Court-reporter. Passive intake — preserves verbatim, no interpretation | "save this URL/PDF/clipboard", "save this" |
 
 All agents on `model: sonnet`. Sequential / flag-and-continue communication.
 
@@ -56,9 +56,9 @@ uv tool install trafilatura
 
 ```
 /wiki:init                              # scaffold new vault
-"исследуй nextjs auth options"          # wiki-researcher will pick up the request
-"что мы решили про auth?"               # wiki-advisor answers with cites
-"наведи порядок"                        # wiki-curator audits + fixes
+"research nextjs auth options"          # wiki-researcher will pick up the request
+"what did we decide about auth?"        # wiki-advisor answers with cites
+"clean up the wiki"                     # wiki-curator audits + fixes
 "save this URL: ..."                    # wiki-scribe captures
 ```
 
