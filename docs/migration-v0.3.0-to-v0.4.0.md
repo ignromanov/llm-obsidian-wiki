@@ -11,9 +11,9 @@ You typed `/wiki:capture <URL>`, `/wiki:ingest`, `/wiki:query "..."`, etc.
 ### After (v0.4.0)
 
 You say what you want in natural language:
-- "исследуй X" → wiki-researcher activates
-- "что мы решили про Y" → wiki-advisor answers
-- "наведи порядок" → wiki-curator audits + fixes
+- "research X" → wiki-researcher activates
+- "what did we decide about Y" → wiki-advisor answers
+- "clean up the wiki" → wiki-curator audits + fixes
 - "save this URL" → wiki-scribe captures
 
 The two slash commands that remain:
@@ -59,7 +59,7 @@ What stays the same:
 Run a sanity check:
 
 ```
-"наведи порядок"   # invokes wiki-curator audit
+"clean up the wiki"   # invokes wiki-curator audit
 ```
 
 Expected: 0 P0 violations.

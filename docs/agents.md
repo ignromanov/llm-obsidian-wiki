@@ -11,7 +11,7 @@ Four task-oriented agents. All on `model: sonnet`. Sequential / flag-and-continu
 **Tools**: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 
 **Triggers**:
-- "исследуй X"
+- "research X"
 - "investigate Y for the wiki"
 - "build write-up about Z"
 
@@ -24,7 +24,7 @@ Four task-oriented agents. All on `model: sonnet`. Sequential / flag-and-continu
 **Tools**: Read, Bash, Glob, Grep, Write (synthesis only)
 
 **Triggers**:
-- "что мы решили про X"
+- "what did we decide about X"
 - "what does the wiki say about Y"
 - "answer from vault"
 
@@ -37,7 +37,7 @@ Four task-oriented agents. All on `model: sonnet`. Sequential / flag-and-continu
 **Tools**: Read, Edit, Write, Bash, Glob, Grep
 
 **Triggers**:
-- "наведи порядок"
+- "clean up the wiki"
 - "audit wiki"
 - "find issues + fix"
 - "migrate schema"
@@ -52,7 +52,7 @@ Four task-oriented agents. All on `model: sonnet`. Sequential / flag-and-continu
 
 **Triggers**:
 - "save this <URL/PDF/text>"
-- "запиши это"
+- "save this"
 - "intake clipboard"
 
 ## Anti-overlap matrix

@@ -51,7 +51,7 @@ $vault_path/
 
    Quick start:
    - Add Obsidian vault: open $vault_path in Obsidian
-   - First research: invoke wiki-researcher with "исследуй <topic>"
+   - First research: invoke wiki-researcher with "research <topic>"
    - First capture: drag a URL/PDF and say "save this"
    - Status anytime: /wiki:status
    ```
