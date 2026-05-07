@@ -6,6 +6,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/portable-hash.sh
 . "$SCRIPT_DIR/lib/portable-hash.sh"
+# shellcheck source=lib/url-safety.sh
+. "$SCRIPT_DIR/lib/url-safety.sh"
 
 VAULT_PATH=""; SLUG=""; INPUT=""; INPUT_FILE=""; ORIGIN="text"
 while [[ $# -gt 0 ]]; do
@@ -23,6 +25,9 @@ done
   echo "       (reads from stdin if --input-file omitted)" >&2
   exit 2
 }
+
+# Validate slug: must be lowercase alphanumeric + hyphens only
+[[ "$SLUG" =~ ^[a-z0-9-]+$ ]] || { echo "slug must match ^[a-z0-9-]+\$: $SLUG" >&2; exit 2; }
 
 case "$ORIGIN" in
   text|clipboard|session) ;;
@@ -50,11 +55,14 @@ WORDS=$(echo "$INPUT" | wc -w | tr -d ' ')
 QUALITY="high"
 [[ "$WORDS" -lt 50 ]] && QUALITY="low"
 
+SAFE_SLUG="$(lib_yaml_escape "$SLUG")"
+SAFE_ORIGIN="$(lib_yaml_escape "$ORIGIN")"
+
 cat > "$RAW" <<HEADER
 ---
 type: source
-source_type: $ORIGIN
-slug: $SLUG
+source_type: $SAFE_ORIGIN
+slug: $SAFE_SLUG
 captured_at: $NOW
 captured_by: wiki-scribe
 sha256: $SHA
@@ -68,20 +76,20 @@ chmod 600 "$RAW"
 cat > "$SUMMARY" <<HEADER
 ---
 type: source-summary
-source_type: $ORIGIN
-slug: $SLUG
+source_type: $SAFE_ORIGIN
+slug: $SAFE_SLUG
 captured_at: $NOW
 captured_by: wiki-scribe
 sha256: $SHA
-raw_path: raw/text/${SLUG}.md
+raw_path: raw/text/${SAFE_SLUG}.md
 quality: $QUALITY
 tier: 4
 key_claims: []
 ---
 
-# $SLUG
+# $SAFE_SLUG
 
-Captured from $ORIGIN ($WORDS words). See [[${SLUG}]] in raw/ for full content.
+Captured from $SAFE_ORIGIN ($WORDS words). See [[${SAFE_SLUG}]] in raw/ for full content.
 HEADER
 chmod 600 "$SUMMARY"
 
