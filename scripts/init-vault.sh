@@ -108,6 +108,26 @@ for ptype in "${PAGE_TYPES[@]}"; do
   fi
 done
 
+# v0.4.0 fixed dirs (drafts / contradictions / logs)
+for fixed_dir in _drafts contradictions _logs; do
+  target="${VAULT}/wiki/${fixed_dir}"
+  if [[ ! -d "$target" ]]; then
+    mkdir -p "$target"
+    touch "$target/.gitkeep"
+    CREATED+=("wiki/${fixed_dir}/")
+  fi
+done
+
+# v0.4.0 hot.md (rolling session cache) — seed from template if available
+HOT_TEMPLATE="${SCRIPT_DIR}/templates/_hot.md"
+HOT_TARGET="${VAULT}/wiki/hot.md"
+if [[ -f "$HOT_TEMPLATE" && ! -f "$HOT_TARGET" ]]; then
+  NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  sed "s|{{NOW_ISO8601}}|$NOW_ISO|g" "$HOT_TEMPLATE" > "$HOT_TARGET"
+  chmod 600 "$HOT_TARGET"
+  CREATED+=("wiki/hot.md")
+fi
+
 # assets/
 if [[ ! -d "${VAULT}/assets" ]]; then
   mkdir -p "${VAULT}/assets"

@@ -1,7 +1,7 @@
 {
   "name": "llm-obsidian-wiki",
-  "version": "0.3.0",
-  "description": "Persistent, compounding knowledge base maintained by LLMs in Obsidian. Inspired by Karpathy's LLM Wiki pattern.",
+  "version": "0.4.0",
+  "description": "Persistent, compounding knowledge base maintained by LLMs in Obsidian — agent-first edition. Four task-oriented agents (Researcher / Advisor / Curator / Scribe) with citations, confidence, supersession, and rolling session cache. Inspired by Karpathy's LLM Wiki pattern.",
   "author": {
     "name": "Ignat Romanov",
     "url": "https://github.com/ignromanov"
@@ -12,6 +12,7 @@
   "keywords": [
     "wiki", "knowledge-base", "obsidian", "llm",
     "zettelkasten", "claude-code-plugin", "karpathy",
-    "compounding-knowledge", "second-brain"
+    "compounding-knowledge", "second-brain",
+    "agent-first", "pkm", "llm-memory"
   ]
 }

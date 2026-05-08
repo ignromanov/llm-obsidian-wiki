@@ -4,7 +4,7 @@
 
 ### LLMs forget everything between sessions. This plugin gives them a memory that compounds.
 
-![Version](https://img.shields.io/badge/version-0.3.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-orange)
 
@@ -18,7 +18,19 @@
 
 LLMs lose all context between sessions. RAG systems re-derive knowledge from raw documents on every query, spending tokens to rediscover what was already known. In 2025, [Andrej Karpathy proposed](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) a different approach: have the LLM incrementally build and maintain a persistent wiki -- structured, interlinked markdown that compounds over time. The idea sparked a [400+ comment discussion](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) drawing on the Zettelkasten tradition and digital garden movement.
 
-This plugin turns that idea into a working system. It is a Claude Code plugin with 8 skills, 5 agents, and 17 utility scripts that automates the full capture, ingest, query, and lint loop inside an Obsidian vault. Knowledge is compiled once and kept current -- not re-derived on every query.
+This plugin turns that idea into a working system. It is a Claude Code plugin with **4 task-oriented agents**, 7 internal workflow skills, 2 slash commands, and 27 utility scripts that automate the full capture / research / answer / audit / maintain loop inside an Obsidian vault. Knowledge is compiled once and kept current -- not re-derived on every query.
+
+## What's new in v0.4.0
+
+- **Agent-first UX** — talk to the system in natural language; Claude triggers the right agent
+- **Extended personas** with voice / vocabulary / anti-patterns / litmus tests
+- **Sonnet-only** for token economy
+- **defuddle → trafilatura → r.jina.ai** privacy-first web→md stack (cloud opt-in)
+- **hot.md** rolling 500-word session cache
+- **Tree topology lints** — index ≤100 links, hubs ≤15 members
+- **Confidence + supersession** in frontmatter
+- **Claim-level citations** with raw quotes and anchors
+- **Forgetting curve** for stale-page detection
 
 > [!IMPORTANT]
 > **Trust and transparency**
@@ -60,59 +72,56 @@ $ claude
   What is the project/wiki name? ml-research
   Which page types? (all 10 selected)
   Which raw source directories? (defaults: knowledge, specs, meetings, docs, external, inbox)
-  Which capture tools are installed? defuddle, yt-dlp
+  Which capture tools are installed? defuddle, trafilatura
 
   Wiki vault "ml-research" created successfully.
-  Files: CLAUDE.md, wiki.config.md, index.md, log.md
+  Files: CLAUDE.md, wiki.config.md, index.md, hot.md, log.md
   Next: open the vault in Obsidian, add your first source.
 
-> /wiki:capture https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
+> "research karpathy llm wiki pattern"
 
-  Detected: article (URL)
-  Running: capture-url.sh
+  [wiki-researcher]
+  Capturing: https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f
   Saved: raw/external/2026-04-11-karpathy-llm-wiki-pattern.md
-  Frontmatter: title="LLM Wiki", source_type=article, captured=2026-04-11
 
-> /wiki:ingest raw/external/2026-04-11-karpathy-llm-wiki-pattern.md
-
-  Reading source... extracting key concepts...
-
-  Key takeaways:
-    1. LLM as wiki maintainer, not just query engine
-    2. Three-layer architecture: raw -> wiki -> schema
-    3. Knowledge compounds across sessions
-    4. Wikilinks create a navigable graph
-
-  Which are most important? (all)
-
+  Compiling wiki pages...
   Created: wiki/sources/src-karpathy-llm-wiki-pattern.md
-  Created: wiki/concepts/llm-wiki-pattern.md
+  Created: wiki/concepts/llm-wiki-pattern.md  (confidence: high, 3 sources)
   Created: wiki/concepts/compounding-knowledge.md
-  Updated: index.md, log.md
+  Updated: index.md, hot.md, log.md
 
-> /wiki:query "How does compounding knowledge differ from RAG?"
+> "how does compounding knowledge differ from RAG?"
 
+  [wiki-advisor]
   Searching wiki... 3 pages found, reading 2...
 
-  Answer: RAG re-derives answers from raw documents on each query,
-  paying full token cost every time. The LLM Wiki pattern ([[llm-wiki-pattern]])
-  compiles knowledge once into structured [[compounding-knowledge]] pages that
-  are maintained incrementally. Subsequent queries read the compiled wiki
-  instead of re-processing raw sources.
+  RAG re-derives answers from raw documents on each query, paying full token
+  cost every time. The LLM Wiki pattern ([[llm-wiki-pattern]]) compiles
+  knowledge once into structured [[compounding-knowledge]] pages maintained
+  incrementally. Subsequent queries read the compiled wiki instead of
+  re-processing raw sources.
 
   Sources: [[src-karpathy-llm-wiki-pattern]], [[compounding-knowledge]]
 
-  File back as wiki page? yes
-  Created: wiki/synthesis/rag-vs-compounding-knowledge.md
+> "clean up the wiki"
+
+  [wiki-curator]
+  Running health checks...
+  ✓ No orphaned pages
+  ✓ No broken wikilinks
+  ⚠ 1 stale page detected: wiki/concepts/compounding-knowledge.md (90 days)
+  Auto-fixed: index drift resolved
+  Report saved: log.md
 ```
 
 ## Quick Start
 
 1. **Install** the plugin (see [Install](#install))
 2. **`/wiki:init`** -- interactive wizard scaffolds the vault structure, CLAUDE.md schema, and config
-3. **`/wiki:capture <url>`** -- collect your first source into `raw/`
-4. **`/wiki:ingest`** -- process the raw source into structured wiki pages
-5. **`/wiki:query "your question"`** -- ask the wiki something and get cited answers
+3. **`"research <topic>"`** -- wiki-researcher captures sources and compiles wiki pages
+4. **`"what did we decide about <topic>?"`** -- wiki-advisor answers with `[[wikilink]]` citations
+5. **`"clean up the wiki"`** -- wiki-curator audits health and fixes issues
+6. **`"save this URL: <url>"`** -- wiki-scribe captures verbatim, no interpretation
 
 ## Architecture
 
@@ -197,112 +206,64 @@ Every log entry includes `Deferred:` (unresolved issues) and `Next:` (suggested 
 
 </details>
 
-## Skills Reference
+## Slash Commands
 
-| Command | Purpose | Example |
-|---------|---------|---------|
-| `/wiki:init` | Interactive wizard -- scaffolds vault structure, schema, config | `/wiki:init` |
-| `/wiki:capture <source>` | Collect raw source (URL, PDF, YouTube, GitHub, file, clipboard) | `/wiki:capture https://example.com/article` |
-| `/wiki:ingest [file]` | Process raw sources into wiki pages with cross-references | `/wiki:ingest raw/external/2026-04-11-article.md` |
-| `/wiki:query "question"` | Search wiki and synthesize cited answers | `/wiki:query "What funding options exist?" --research` |
-| `/wiki:lint` | Health check -- orphans, stale pages, broken links, drift | `/wiki:lint --fix` |
-| `/wiki:browse [section]` | Quick overview of wiki contents by section or tag | `/wiki:browse concepts` |
-| `/wiki:status` | Wiki metrics -- page counts, health summary, unprocessed sources | `/wiki:status --unprocessed` |
-| `/wiki:migrate` | Migrate vault schema to current plugin version | `/wiki:migrate` |
+In v0.4.0, most functions are triggered by natural language — talk to Claude and the right agent activates automatically. Only two explicit slash commands remain:
 
-<details>
-<summary>Skill details</summary>
+| Command | Purpose |
+|---------|---------|
+| `/wiki:init` | Interactive wizard — scaffolds vault structure, schema, config |
+| `/wiki:status` | Wiki metrics — page counts, health summary, unprocessed sources |
 
-### capture
-
-Auto-detects source type from URL pattern and routes to the appropriate capture script:
-
-| Source | Detection | Tool used |
-|--------|-----------|-----------|
-| Web article | `https://*` | `defuddle` via `capture-url.sh` |
-| YouTube | `youtube.com/*`, `youtu.be/*` | `yt-dlp` via `capture-youtube.sh` |
-| GitHub issue/PR/discussion | `github.com/*/*/issues/*` etc. | `gh` via `capture-github.sh` |
-| PDF | `*.pdf` local path | `pandoc` |
-| PR batch | `--prs-since <date>` | `capture-prs.sh` |
-| Git log | `--git-log <repo>` | `capture-git-log.sh` |
-| Clipboard | No URL provided | `pbpaste` |
-
-Pipeline shortcut: `--ingest` flag captures and immediately ingests in one step.
-
-### ingest
-
-Modes: **interactive** (default, discusses takeaways with you), **auto** (`--auto`, decides autonomously), **batch** (`--unprocessed`, processes all pending sources), **domain** (`--domain <name>`, scoped to one raw subdirectory).
-
-Creates a `source-summary` page for every raw file, then creates or updates concept/entity/decision pages. Computes source hashes for provenance tracking. When sources conflict, triggers a reflect step that creates a decision record.
-
-### query
-
-Modes: **interactive** (default), **file-back** (`--file-back`, saves answer automatically), **research** (`--research`, deep analysis with gap identification).
-
-Uses progressive disclosure: L0 (TLDR triage), L1 (headings), L2 (full read), L3 (page + linked sources). Tag broadening discovers thematically related pages beyond literal keyword matches.
-
-### lint
-
-Modes: **report** (default), **fix** (`--fix`, auto-resolves safe issues), **deep** (`--deep`, re-reads raw sources for content drift).
-
-Checks: orphans, broken wikilinks, dead ends, missing TLDRs, stale pages, shallow pages, contradictions, index drift, low confidence + active, untyped contradictions, source hash drift. Reports growth opportunities.
-
-</details>
+Everything else (capture, research, answer, audit, maintain, migrate) is handled by the four agents via natural language invocation.
 
 ## Agents Reference
 
-Agents are autonomous subagents that handle batch or long-running operations without user interaction.
+| Agent | Persona | When to invoke |
+|---|---|---|
+| **wiki-researcher** | Field researcher-archivist. Karpathy-style: compile knowledge once with provenance | "research X", "investigate Y", "build write-up about Z" |
+| **wiki-advisor** | Senior consultant. Reads only `wiki/`, always cites with `[[wikilinks]]` | "what did we decide about X", "answer from wiki", "what does the wiki say" |
+| **wiki-curator** | Librarian-archaeologist. Lint, drift detection, supersession, hub split, schema migration | "clean up the wiki", "audit health", "fix issues", "migrate schema" |
+| **wiki-scribe** | Court-reporter. Passive intake — preserves verbatim, no interpretation | "save this URL/PDF/clipboard", "save this" |
 
-| Agent | Purpose | When to use |
-|-------|---------|-------------|
-| `wiki-ingest-agent` | Batch processes multiple raw sources into wiki pages | Processing all unprocessed files or a domain folder |
-| `wiki-capture-agent` | Batch captures multiple sources into `raw/` | Capturing a list of URLs, PR batches, or mixed sources |
-| `wiki-query-agent` | Searches wiki, synthesizes answers, files back results | Research queries, batch questions, topic analysis |
-| `wiki-lint-agent` | Deep health check with drift detection and auto-fixes | Thorough wiki maintenance, periodic health checks |
-| `wiki-migrate-agent` | Migrates vault schema between plugin versions | After plugin update when pages need new fields |
-
-<details>
-<summary>Agent details</summary>
-
-All agents run on Sonnet for cost efficiency. They read `wiki.config.md` for vault configuration, establish a health baseline before work, and report structured results when done.
-
-**wiki-ingest-agent** processes files chronologically (oldest first) to build context incrementally. After each file, it uses the updated wiki state for subsequent files. Runs `regenerate.sh` to update the index and hub pages. Compares health metrics before and after to catch regressions.
-
-**wiki-capture-agent** detects source type per URL, checks that required tools are installed, runs the appropriate capture script, validates output (frontmatter, content, filename convention), and reports successes/failures.
-
-**wiki-query-agent** uses search-first retrieval (never loads the full index), progressive disclosure for token efficiency, and graph traversal for 2nd-degree discovery. Creates synthesis pages and logs all queries.
-
-**wiki-lint-agent** runs in three phases: quick checks (automated via `wiki-health.sh`), manual checks (reading pages for stale content, contradictions, shallow pages), and the report. Fix mode resolves orphans, broken links, stale pages, and index drift. Deep mode re-reads raw sources to detect content drift.
-
-**wiki-migrate-agent** runs deterministic bash migration scripts first (bulk field additions, hash computation), then performs intelligent adjustments (verifying confidence levels, identifying contradiction relations). Idempotent -- running twice produces the same result.
-
-</details>
+All agents on `model: sonnet`. Sequential / flag-and-continue communication. Most agent functions are triggered by natural language — no slash command needed.
 
 <details>
 <summary>Scripts reference</summary>
 
-17 utility scripts in `scripts/` (plus 4 shared helpers in `scripts/lib/`):
+27 utility scripts in `scripts/` (plus 5 shared helpers in `scripts/lib/`):
 
 | Script | Purpose |
 |--------|---------|
-| `init-vault.sh` | Create vault directory structure from config |
-| `capture-url.sh` | Capture web article via defuddle |
-| `capture-youtube.sh` | Capture YouTube transcript via yt-dlp |
-| `capture-github.sh` | Capture GitHub issue/PR/discussion/repo via gh |
-| `capture-prs.sh` | Batch capture merged PRs since a date |
 | `capture-git-log.sh` | Capture git commit history as markdown |
+| `capture-github.sh` | Capture GitHub issue/PR/discussion/repo via gh |
+| `capture-pdf.sh` | Capture PDF file to raw markdown |
+| `capture-prs.sh` | Batch capture merged PRs since a date |
+| `capture-text.sh` | Capture plain text / clipboard content |
+| `capture-url.sh` | Capture web article via defuddle → trafilatura → r.jina.ai |
+| `capture-youtube.sh` | Capture YouTube transcript via yt-dlp |
 | `create-page.sh` | Create wiki page from template |
+| `detect-contradictions.sh` | Find pages with conflicting claims |
+| `detect-stale.sh` | Find pages past forgetting-curve threshold |
+| `find-orphans.sh` | Find wiki pages with no backlinks |
 | `find-unprocessed.sh` | List raw files without source summaries |
+| `init-vault.sh` | Create vault directory structure from config |
 | `page-context.sh` | Get page metadata, backlinks, and outgoing links |
+| `promote-draft.sh` | Move page from _drafts/ to its target directory |
 | `regenerate.sh` | Regenerate index.md and _hub.md files |
 | `section-browse.sh` | List pages in a wiki section with TLDRs |
+| `split-hub.sh` | Split an overgrown hub into sub-hubs |
+| `supersede-page.sh` | Mark a page superseded and link to replacement |
+| `update-hot.sh` | Update rolling 500-word session cache (hot.md) |
 | `update-hubs.sh` | Update per-directory _hub.md files |
 | `update-index.sh` | Rebuild index.md from page TLDRs |
-| `wiki-health.sh` | Quick health check (orphans, broken links, dead ends) |
+| `verify-source-drift.sh` | Detect raw-file hash changes since page was written |
+| `verify-tree-topology.sh` | Check index ≤100 links and hubs ≤15 members |
+| `wiki-health.sh` | Aggregator: delegates to atomic check scripts |
 | `wiki-search.sh` | Search with inline TLDRs and related tags |
 | `wiki-stats.sh` | Vault totals, per-section counts, activity dates |
 
-Plus `scripts/lib/` (4 shared helpers: `read-yaml-key.sh`, `portable-hash.sh`, `canonical-path.sh`, `check-deps.sh`), `scripts/templates/` (10 page templates, one per type), and `scripts/migrations/` (versioned migration scripts).
+Plus `scripts/lib/` (5 shared helpers: `read-yaml-key.sh`, `portable-hash.sh`, `canonical-path.sh`, `check-deps.sh`, `url-safety.sh`), `scripts/templates/` (10 page templates, one per type), and `scripts/migrations/` (versioned migration scripts).
 
 </details>
 
@@ -346,16 +307,30 @@ relations:                 # v0.2.0 -- typed entity relations
 source_hashes:             # v0.2.0 -- provenance tracking
   - path: "raw/external/2026-04-11-article.md"
     sha256: "a1b2c3..."
-aliases:                   # optional -- alternative names for the page
+aliases:                   # v0.4.0 -- alternative names for the page
   - Alternative Title
+tier: 3                    # v0.4.0 -- importance score 0-5 (0=ephemeral, 5=cornerstone)
+cluster: ""                # v0.4.0 -- domain grouping (e.g. "auth", "infra")
+last_verified: 2026-04-11  # v0.4.0 -- ISO date of last content verification
+key_claims:                # v0.4.0 -- distilled claims (source pages only; channel to synthesis)
+  - "Claim text"
+superseded_by: ""          # v0.4.0 -- wikilink to replacement page (decision pages)
+supersedes: ""             # v0.4.0 -- wikilink to page this replaces
+quality: draft             # v0.4.0 -- draft | promoted | canonical (source pages)
+filed_from_query: ""       # v0.4.0 -- query that produced this synthesis page
+captured_by: ""            # v0.4.0 -- agent that created the page (provenance)
 ---
 ```
 
 ### Schema versioning
 
-The vault tracks its schema version in `wiki.config.md` via the `schema_version` field. When the plugin updates, the `wiki-migrate-agent` compares the vault's schema version against the plugin version and runs migration scripts in sequence (e.g., `v0.1.0-to-v0.2.0.sh`). Migrations are idempotent -- running them twice is safe.
+The vault tracks its schema version in `wiki.config.md` via the `schema_version` field. When the plugin updates, **wiki-curator** (migrate skill) compares the vault's schema version against the plugin version and runs migration scripts in sequence. Migrations are idempotent -- running them twice is safe.
 
-Current migration path: `0.1.0` -> `0.2.0` (adds `confidence`, `relations`, `source_hashes` fields; adds counter-arguments sections to concept pages).
+Current migration path: `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0`. To migrate say `"migrate the wiki"` (routes to wiki-curator), or invoke the script directly:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh --vault /path/to/vault
+```
 
 </details>
 
@@ -371,7 +346,8 @@ Current migration path: `0.1.0` -> `0.2.0` (adds `confidence`, `relations`, `sou
 
 | Tool | Install | Used for |
 |------|---------|----------|
-| [defuddle](https://github.com/kepano/defuddle) | `npm i -g defuddle` | Web articles to clean markdown |
+| [defuddle](https://github.com/kepano/defuddle) | `npm i -g defuddle-cli` | Web articles to clean markdown (primary extractor) |
+| [trafilatura](https://trafilatura.readthedocs.io/) | `uv tool install trafilatura` | Web→markdown fallback extractor (privacy-first) |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | `brew install yt-dlp` | YouTube transcript extraction |
 | [pandoc](https://pandoc.org/) | `brew install pandoc` | PDF/HTML/DOCX to markdown conversion |
 | [gh](https://cli.github.com/) | `brew install gh` | GitHub issues, PRs, discussions |
@@ -398,11 +374,21 @@ Key fields in the YAML frontmatter:
 Edit the YAML frontmatter values directly. Skills pick up changes on next invocation.
 
 > [!IMPORTANT]
-> **v0.3.0 breaking change:** `wiki.config.md` now requires BOTH `vault_name` AND `vault_path`. If you are upgrading from v0.2.0, add `vault_path: /absolute/path/to/your/vault` to your config file and run `/wiki:migrate`.
+> **v0.3.0 breaking change:** `wiki.config.md` now requires BOTH `vault_name` AND `vault_path`. If you are upgrading from v0.2.0, add `vault_path: /absolute/path/to/your/vault` to your config file and say `"migrate the wiki"` (routes to wiki-curator).
+
+### Migration from v0.3.0
+
+Run the migration script after upgrading to v0.4.0:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh --vault /path/to/vault
+```
+
+See `docs/migration-v0.3.0-to-v0.4.0.md` for a full list of changes (new agent definitions, hot.md session cache, updated frontmatter fields).
 
 ### Migration from v0.2.0
 
-Run `/wiki:migrate` after upgrading. The migrate skill (backed by `wiki-migrate-agent`) detects your current schema version and applies any missing migration scripts automatically. It is idempotent -- safe to run multiple times.
+Say `"migrate the wiki"` after upgrading. wiki-curator (migrate skill) detects your current schema version and applies any missing migration scripts automatically. It is idempotent -- safe to run multiple times.
 
 ### Security
 
@@ -414,11 +400,11 @@ The plugin tracks schema versions to handle breaking changes gracefully:
 
 1. `wiki.config.md` stores `schema_version` (the vault's current schema)
 2. `plugin.json` stores `version` (the plugin's expected schema)
-3. When they differ, the `wiki-migrate-agent` bridges the gap by running versioned migration scripts from `scripts/migrations/`
+3. When they differ, **wiki-curator** (migrate skill) bridges the gap by running versioned migration scripts from `scripts/migrations/`
 
-Migrations are sequential (`v0.1.0-to-v0.2.0`, then `v0.2.0-to-v0.3.0`) and idempotent. The bash script handles bulk deterministic changes; the agent handles intelligent adjustments that require reading page content.
+Migrations are sequential and idempotent. The bash script handles bulk deterministic changes; the agent handles intelligent adjustments that require reading page content.
 
-Current migration path: `0.1.0` → `0.2.0` → `0.3.0`. The v0.2.0→v0.3.0 migration adds the `vault_path` field to `wiki.config.md`. Run `/wiki:migrate` to apply.
+Current migration path: `0.1.0` → `0.2.0` → `0.3.0` → `0.4.0`. Say `"migrate the wiki"` to invoke wiki-curator, or run the migration script directly.
 
 ## Contributing
 
@@ -427,9 +413,9 @@ Contributions are welcome. The plugin is structured as:
 ```
 llm-obsidian-wiki/
   .claude-plugin/plugin.json   # plugin metadata
-  skills/                       # 8 skill definitions (SKILL.md + references)
-  agents/                       # 5 agent definitions
-  scripts/                      # 17 bash utility scripts + scripts/lib/ (4 shared helpers)
+  skills/                       # 7 skill definitions (SKILL.md + references)
+  agents/                       # 4 agent definitions
+  scripts/                      # 27 bash utility scripts + scripts/lib/ (5 shared helpers)
   scripts/templates/            # 10 page templates
   scripts/migrations/           # versioned migration scripts
   SKILL.md                      # marketplace overview

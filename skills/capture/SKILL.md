@@ -1,237 +1,93 @@
 ---
 name: capture
-version: 0.2.0
-description: |
-  This skill should be used when the user wants to save a source into the wiki's raw/ directory.
-  Triggers: capture URL, save article, clip web page, download PDF, YouTube
-  transcript, GitHub issue, tweet thread, clipboard save, sync internal files,
-  capture PRs, capture git log, sync code changes,
-  or any mention of "capture", "raw", "source", "web clip", "ingest from".
+description: This skill should be used when an agent needs to ingest a source (URL, YouTube, GitHub, PDF, clipboard, session log) into the vault. Triggers when wiki-scribe or wiki-researcher needs to "capture", "save source", "intake", "file URL", or "hash and store".
 ---
 
-# Capture — Collect Raw Sources
+# Capture — Universal Source Intake
 
-Collect external and internal sources into the wiki's `raw/` directory as immutable markdown files with structured frontmatter.
+## Purpose
 
-## Setup
+Ingest one source into `raw/<type>/<slug>.<ext>` (immutable, SHA-256 hashed) and create `wiki/sources/<slug>.md` (source-summary with `key_claims[]`).
 
-Read `wiki.config.md` at the vault root to get:
-- `vault_name` → store as `$VAULT_NAME` (for `obsidian vault="$VAULT_NAME"` commands)
-- `vault_path` → store as `$VAULT_PATH` (first positional argument to bash scripts)
-- `plugin_root` → store as `$PLUGIN_ROOT` (for scripts like `$PLUGIN_ROOT/scripts/capture-url.sh`)
-- `capture_tools` — list of installed capture tools (defuddle, yt-dlp, pandoc)
+Used by wiki-scribe (primary, passive intake) and wiki-researcher (via research workflow).
 
-Set `RAW_DIR` to the `raw/` directory relative to where `wiki.config.md` lives.
+## Trigger phrases (agent perspective)
 
-## Source Detection
+- "capture this URL"
+- "save this PDF"
+- "intake source"
+- "file clipboard"
+- "hash and store this"
+- "wiki-scribe should ingest X"
 
-Auto-detect source type from the input:
+## Inputs
 
-| Pattern | source_type | Mode |
-|---------|-------------|------|
-| `https://*.youtube.com/*`, `https://youtu.be/*` | `video` | YouTube |
-| `https://github.com/*/*/issues/*` | `github-issue` | GitHub |
-| `https://github.com/*/*/pull/*` | `github-pr` | GitHub |
-| `https://github.com/*/*/discussions/*` | `github-discussion` | GitHub |
-| `https://github.com/*/*/*` (repo root) | `github-repo` | GitHub |
-| `https://x.com/*/status/*`, `https://twitter.com/*/status/*` | `tweet` | Tweet |
-| `https://*` or `http://*` | `article` | URL |
-| `*.pdf` (local path) | `pdf` | PDF |
-| Local file path | `file` | File |
-| `.ai/` or project directory | `internal` | Internal sync |
-| No URL, no path | `clipboard` | Clipboard |
+One of:
+- URL (any https://)
+- YouTube link
+- GitHub link (issue / PR / repo)
+- PDF (path or URL)
+- Raw text (clipboard, session log, transcript)
 
-## Capture Modes
+## Outputs
 
-### URL (articles, blog posts, docs)
+Two files per capture:
+1. `raw/<type>/<slug>.<ext>` — immutable, SHA-256 in frontmatter, full content
+2. `wiki/sources/<slug>.md` — source-summary with `key_claims: [{quote, anchor, confidence}]`, `quality`, `captured_by`
 
-Use the `capture-url.sh` script:
+## Workflow
 
-```bash
-"$PLUGIN_ROOT/scripts/capture-url.sh" "<url>" "$VAULT_PATH"
-```
+1. **Detect source type** from URL or path:
+   - `*.pdf` → capture-pdf.sh
+   - `youtube.com/*` or `youtu.be/*` → capture-youtube.sh
+   - `github.com/*/issues/*` or `*/pull/*` → capture-github.sh
+   - `github.com/*/pulls` → capture-prs.sh
+   - text without URL → capture-text.sh
+   - other URL → capture-url.sh
 
-The script runs `defuddle parse <url> --markdown`, extracts the title and author from defuddle output, and prepends frontmatter. If defuddle is unavailable, fall back to `WebFetch` and manually convert to markdown.
+2. **Invoke the appropriate script** with `--vault $VAULT_PATH` and `--source $INPUT`. Scripts handle SHA-256 and frontmatter.
 
-Output file: `$RAW_DIR/external/YYYY-MM-DD-slugified-title.md`
+3. **Extract `key_claims`** for source-summary:
+   - If source <500 words: preserve full content as single claim
+   - If 500–5000 words: top-5 verbatim quotes with anchors (paragraph index)
+   - If >5000 words: top-10 quotes with anchors
 
-### PDF (local documents)
+4. **Set `quality` field** in source-summary:
+   - `high` if extraction succeeded with >500 chars
+   - `medium` if 200-500 chars (paywall preview, partial)
+   - `low` if <200 chars or extraction errors
 
-1. Copy the PDF to `$RAW_DIR/external/` for archival.
-2. Extract text with pandoc:
+5. **Set `captured_by`** to invoking agent name (`wiki-scribe` or `wiki-researcher`).
 
-```bash
-pandoc "<path>.pdf" -t markdown -o "$RAW_DIR/external/YYYY-MM-DD-slugified-title.md"
-```
+## Web→MD stack (for capture-url.sh)
 
-3. Prepend frontmatter to the extracted markdown. Set `source_type: pdf` and `source_url` to the original file path.
+The script tries three extractors in order:
 
-### YouTube (video transcripts)
+1. `defuddle` (Node CLI, MIT, local) — primary
+2. `trafilatura` (Python CLI, Apache-2.0, local) — fallback if defuddle fails OR content <500 chars
+3. `r.jina.ai` (cloud) — opt-in via env `WIKI_ALLOW_CLOUD=1`
 
-Use the `capture-youtube.sh` script:
+If all three fail, exit 3 and tell user to provide content via `capture-text.sh` (manual clipboard).
 
-```bash
-"$PLUGIN_ROOT/scripts/capture-youtube.sh" "<url>" "$VAULT_PATH"
-```
+## Quality gate
 
-The script runs `yt-dlp --write-auto-sub --sub-lang en --skip-download --convert-subs srt -o "%(title)s"`, then converts the `.srt` to markdown with timestamps stripped. If `yt-dlp` is unavailable, report the missing tool and stop.
+- Every output has SHA-256 in frontmatter
+- `wiki/sources/<slug>.md` is in tier 4
+- `key_claims` is never empty for sources >500 words (if empty, log warning)
+- `captured_by` is set
 
-Output file: `$RAW_DIR/external/YYYY-MM-DD-slugified-title.md` with `source_type: video`.
+## Scripts used
 
-### GitHub (issues, PRs, discussions, repos)
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-url.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-youtube.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-github.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-prs.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-pdf.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-text.sh`
+- `${CLAUDE_PLUGIN_ROOT}/scripts/capture-git-log.sh`
 
-Use the `capture-github.sh` script:
+## Anti-patterns
 
-```bash
-"$PLUGIN_ROOT/scripts/capture-github.sh" "<url>" "$VAULT_PATH"
-```
-
-The script parses the URL to extract `owner/repo` and resource type/number, then calls:
-- Issues: `gh api repos/{owner}/{repo}/issues/{number}` → `source_type: github-issue`
-- PRs: `gh api repos/{owner}/{repo}/pulls/{number}` → `source_type: github-pr`
-- Discussions: `gh api graphql` with discussion query → `source_type: github-discussion`
-- Repo root: `gh api repos/{owner}/{repo}` + README → `source_type: github-repo`
-
-Converts the JSON response to markdown with title, body, labels, and comments.
-
-For batch PR capture (multiple PRs since a date), use the dedicated PR mode described below.
-
-### Tweet (X/Twitter threads)
-
-Fetch the tweet content. Try these methods in order:
-1. `WebFetch` the tweet URL with a readable user-agent
-2. Parse the HTML for tweet text content
-
-Format as markdown with author handle, timestamp, and thread structure. Set `source_type: tweet`. Save to `$RAW_DIR/external/YYYY-MM-DD-tweet-{author}-{id}.md`.
-
-### File (local files)
-
-Copy the file into `$RAW_DIR/external/` and add frontmatter:
-
-```bash
-cp "<source_path>" "$RAW_DIR/external/YYYY-MM-DD-original-filename.ext"
-```
-
-For text-based files (.md, .txt, .rst, .org), also create a `.md` version with frontmatter prepended. For binary files, create a companion `.md` sidecar with frontmatter and a reference to the binary.
-
-### Internal sync (project directories)
-
-Sync new or changed files from `.ai/` (or other specified project directories) into `$RAW_DIR/internal/`:
-
-```bash
-rsync -av --update --include="*.md" --exclude="*" "<source_dir>/" "$RAW_DIR/internal/<dir_name>/"
-```
-
-Do not add frontmatter to internal synced files — they retain their original format. Only sync files modified since the last capture (compare timestamps).
-
-### Pull Requests (merged PRs → code changes)
-
-Use the `capture-prs.sh` script for batch PR capture:
-
-```bash
-"$PLUGIN_ROOT/scripts/capture-prs.sh" "<owner/repo>" "$VAULT_PATH" "[since_date]"
-```
-
-Invocation modes:
-- **Single PR**: `/wiki:capture --pr 79` → `capture-github.sh` with PR URL → `source_type: github-pr`
-- **Batch since date**: `/wiki:capture --prs-since 2026-04-08` → `capture-prs.sh "$VAULT_PATH" 2026-04-08`
-- **Batch default (7 days)**: `/wiki:capture --prs` → `capture-prs.sh "$VAULT_PATH"`
-
-`capture-prs.sh` captures all merged PRs since the given date. Each PR becomes a separate file in `raw/inbox/` with title, body, files changed, author, and merge date. Set `source_type: github-pr`.
-
-### Git Log (commit summaries)
-
-Use the `capture-git-log.sh` script:
-
-```bash
-"$PLUGIN_ROOT/scripts/capture-git-log.sh" "<repo_path>" "$VAULT_PATH" "[since_date]"
-```
-
-Captures all non-merge commits since a date as a single summary file in `raw/inbox/`. Includes commit hashes, messages, authors, dates, and diffstat. Set `source_type: git-log`.
-
-Use for periods without PRs (direct commits to develop) or as a supplement to PR capture.
-
-### Clipboard
-
-Read clipboard content using `pbpaste` (macOS):
-
-```bash
-pbpaste > "$RAW_DIR/external/YYYY-MM-DD-clipboard-HHMMSS.md"
-```
-
-Prepend frontmatter with `source_type: clipboard` and `captured` date. Attempt to detect a title from the first heading or first line of content.
-
-## Frontmatter Format
-
-Every captured file in `raw/external/` gets YAML frontmatter:
-
-```yaml
----
-title: "Descriptive Title from Source"
-source_type: article|video|pdf|github-issue|github-pr|github-discussion|github-repo|pull-request|git-log|tweet|file|clipboard
-source_url: https://original-source-url.com/path
-captured: YYYY-MM-DD
-author: Author Name
----
-```
-
-Rules:
-- `title` — extracted from source (page title, video title, issue title). If unavailable, derive from filename or first heading.
-- `source_type` — one of the canonical types listed above. GitHub resources use the granular three-type scheme: `github-issue`, `github-pr`, `github-discussion`, or `github-repo`.
-- `source_url` — original URL or file path. For clipboard, omit this field.
-- `captured` — date of capture in ISO format.
-- `author` — extracted from source when available. Omit if unknown.
-
-## File Naming
-
-Pattern: `YYYY-MM-DD-slugified-title.md`
-
-Slugification rules:
-- Lowercase
-- Replace spaces and special characters with hyphens
-- Remove consecutive hyphens
-- Truncate to 80 characters
-- Strip trailing hyphens
-
-## Pipeline Shortcut
-
-When the user passes `--ingest` (or says "capture and ingest"), run capture first, then immediately invoke the `ingest` skill on the captured file. This skips the manual two-step process.
-
-Sequence: **capture** the source into `raw/` → **ingest** the captured file into `wiki/`.
-
-## Error Handling
-
-| Error | Action |
-|-------|--------|
-| Tool not installed (defuddle, yt-dlp, pandoc) | Report which tool is missing, suggest install command, stop |
-| URL unreachable (4xx/5xx) | Report the HTTP status, do not create empty file |
-| Duplicate filename in `raw/` | Append `-2`, `-3` suffix |
-| Empty content extracted | Warn user, save with `[empty content]` placeholder |
-| File exceeds 500KB after conversion | Warn user, proceed but note size in frontmatter as `large: true` |
-
-## Directory Structure
-
-```
-raw/
-├── external/          # All outside sources (articles, PDFs, videos, tweets, files, clipboard)
-│   ├── 2025-01-15-karpathy-llm-wiki-pattern.md
-│   ├── 2025-01-16-eip-4337-account-abstraction.md
-│   └── 2025-01-16-vitalik-tweet-rollups.md
-├── inbox/             # Batch captures (PRs, git logs) — temporary landing zone
-│   ├── pr-79-feature-name.md
-│   └── git-log-voidpay-2026-04-10.md
-└── internal/          # Synced from project directories
-    └── ai/
-        ├── product.md
-        └── knowledge/
-```
-
-## Checklist
-
-Before finishing capture:
-1. File exists in correct `raw/` subdirectory
-2. Frontmatter is valid YAML with all required fields
-3. `source_type` matches the canonical enum (use `github-issue`/`github-pr`/`github-discussion`/`github-repo`, not bare `github`)
-4. Content is non-empty (or warned if empty)
-5. Filename follows `YYYY-MM-DD-slug.md` pattern
-6. If `--ingest` was requested, hand off to ingest skill
+- DO NOT interpret content during capture (preserve verbatim)
+- DO NOT synthesize across sources (that's research's job)
+- DO NOT edit existing wiki pages (only create raw/ + wiki/sources/)

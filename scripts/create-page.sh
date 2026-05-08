@@ -54,14 +54,23 @@ fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 
+# v0.4.0 placeholders
+NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+CLUSTER="${CLUSTER:-uncategorized}"
+AGENT_NAME="${AGENT_NAME:-unspecified}"
+
 # Substitute placeholders via awk using env vars — safe against special chars in TITLE
 TITLE="$TITLE" TYPE="$TYPE" CREATED="$TODAY" SLUG="$SLUG" \
+CLUSTER="$CLUSTER" AGENT_NAME="$AGENT_NAME" NOW_ISO="$NOW_ISO" \
   awk '{
     gsub(/\{\{TITLE\}\}/, ENVIRON["TITLE"]);
     gsub(/\{\{TYPE\}\}/, ENVIRON["TYPE"]);
     gsub(/\{\{DATE\}\}/, ENVIRON["CREATED"]);
     gsub(/\{\{CREATED\}\}/, ENVIRON["CREATED"]);
     gsub(/\{\{SLUG\}\}/, ENVIRON["SLUG"]);
+    gsub(/\{\{CLUSTER\}\}/, ENVIRON["CLUSTER"]);
+    gsub(/\{\{AGENT_NAME\}\}/, ENVIRON["AGENT_NAME"]);
+    gsub(/\{\{NOW_ISO8601\}\}/, ENVIRON["NOW_ISO"]);
     print
   }' "$TEMPLATE" > "$OUTPUT"
 

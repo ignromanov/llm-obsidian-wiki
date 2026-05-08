@@ -1,78 +1,58 @@
 #!/usr/bin/env bash
-# Usage: wiki-health.sh <vault_path>
-# Outputs structured health checks: orphans, broken links, dead ends, missing tldr.
-# Exit code: 0 = all clear, 1 = issues found.
-# Format: [section]\nkey=value — designed for LLM agent consumption.
+# Aggregator: delegates to atomic check scripts and classifies findings by severity.
+# Usage: wiki-health.sh --vault <path>   (also accepts positional vault path)
 set -Eeuo pipefail
-[[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
+shopt -s inherit_errexit 2>/dev/null || true
 umask 077
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-# shellcheck source=./lib/read-yaml-key.sh
-source "$SCRIPT_DIR/lib/read-yaml-key.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-VAULT_PATH="${1:?Usage: wiki-health.sh <vault_path>}"
+VAULT_PATH=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --vault) VAULT_PATH="$2"; shift 2 ;;
+    *)
+      # Backward-compat: positional vault path
+      if [[ -z "$VAULT_PATH" ]]; then
+        VAULT_PATH="$1"; shift; continue
+      fi
+      echo "Unknown arg: $1" >&2; exit 2
+      ;;
+  esac
+done
 
-if [[ ! -d "${VAULT_PATH}/wiki" ]]; then
-  echo "Error: wiki/ not found at ${VAULT_PATH}" >&2
-  exit 1
-fi
+[[ -n "$VAULT_PATH" ]] || { echo "Usage: $0 --vault <path>" >&2; exit 2; }
+[[ -d "$VAULT_PATH" ]] || { echo "vault not found: $VAULT_PATH" >&2; exit 1; }
 
-OBS_VAULT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "vault_name")
-if [[ -z "$OBS_VAULT" ]]; then
-  echo "Error: vault_name not found in wiki.config.md" >&2
-  exit 1
-fi
+P0=0; P1=0; P2=0
 
-issues=0
+run_check() {
+  local label="$1" severity="$2"
+  shift 2
+  echo "=== $label ==="
+  if "$@"; then
+    return 0
+  else
+    case "$severity" in
+      P0) P0=$((P0 + 1)) ;;
+      P1) P1=$((P1 + 1)) ;;
+      P2) P2=$((P2 + 1)) ;;
+    esac
+  fi
+}
 
-# --- Counts ---
-echo "[counts]"
+run_check "Source drift"   "P0" bash "$SCRIPT_DIR/verify-source-drift.sh"   --vault "$VAULT_PATH"
+run_check "Tree topology"  "P1" bash "$SCRIPT_DIR/verify-tree-topology.sh"  --vault "$VAULT_PATH"
+run_check "Orphans"        "P2" bash "$SCRIPT_DIR/find-orphans.sh"           --vault "$VAULT_PATH"
+run_check "Stale pages"    "P2" bash "$SCRIPT_DIR/detect-stale.sh"           --vault "$VAULT_PATH"
+run_check "Contradictions" "P1" bash "$SCRIPT_DIR/detect-contradictions.sh" --vault "$VAULT_PATH"
 
-orphans=$(obsidian vault="$OBS_VAULT" orphans total < /dev/null 2>/dev/null || echo "0")
-orphans="${orphans:-0}"
-[[ "$orphans" =~ ^[0-9]+$ ]] || orphans=0
-echo "orphans=$orphans"
-[[ "$orphans" -gt 0 ]] && issues=1
+echo
+echo "=== Health summary ==="
+echo "P0 (broken):     $P0"
+echo "P1 (degraded):   $P1"
+echo "P2 (suggestion): $P2"
 
-unresolved=$(obsidian vault="$OBS_VAULT" unresolved total < /dev/null 2>/dev/null || echo "0")
-unresolved="${unresolved:-0}"
-[[ "$unresolved" =~ ^[0-9]+$ ]] || unresolved=0
-echo "unresolved=$unresolved"
-[[ "$unresolved" -gt 0 ]] && issues=1
-
-deadends=$(obsidian vault="$OBS_VAULT" deadends total < /dev/null 2>/dev/null || echo "0")
-deadends="${deadends:-0}"
-[[ "$deadends" =~ ^[0-9]+$ ]] || deadends=0
-echo "deadends=$deadends"
-[[ "$deadends" -gt 0 ]] && issues=1
-
-tldr_count=$(obsidian vault="$OBS_VAULT" properties name=tldr folder=wiki total < /dev/null 2>/dev/null || echo "0")
-tldr_count="${tldr_count:-0}"
-[[ "$tldr_count" =~ ^[0-9]+$ ]] || tldr_count=0
-
-wiki_count=$(obsidian vault="$OBS_VAULT" files folder=wiki total < /dev/null 2>/dev/null || echo "0")
-wiki_count="${wiki_count:-0}"
-[[ "$wiki_count" =~ ^[0-9]+$ ]] || wiki_count=0
-
-missing_tldr=$((wiki_count - tldr_count))
-[[ "$missing_tldr" -lt 0 ]] && missing_tldr=0
-echo "missing_tldr=$missing_tldr"
-[[ "$missing_tldr" -gt 0 ]] && issues=1
-
-# --- Tag hygiene: tags used only once ---
-singleton_tags=$(obsidian vault="$OBS_VAULT" tags sort=count counts < /dev/null 2>/dev/null | awk -F'\t' '$2 == 1' | wc -l | tr -d ' ')
-singleton_tags="${singleton_tags:-0}"
-[[ "$singleton_tags" =~ ^[0-9]+$ ]] || singleton_tags=0
-echo "singleton_tags=$singleton_tags"
-
-# --- Summary line ---
-echo ""
-echo "[summary]"
-if [[ "$issues" -eq 0 ]]; then
-  echo "status=PASS"
-else
-  echo "status=WARN"
-fi
-
-exit "$issues"
+[[ "$P0" -eq 0 ]] || exit 1
+[[ "$P1" -eq 0 ]] || exit 2
+exit 0

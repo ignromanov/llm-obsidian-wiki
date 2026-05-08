@@ -9,6 +9,10 @@ tldr: ""
 tags: []
 sources: []
 relations: []
+tier: 3
+cluster: "{{CLUSTER}}"
+last_verified: {{DATE}}
+key_claims: []
 aliases:
   - "{{TITLE}}"
 ---

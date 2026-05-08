@@ -4,13 +4,9 @@ set -Eeuo pipefail
 [[ ${BASH_VERSINFO[0]:-0} -ge 4 ]] && shopt -s inherit_errexit
 umask 077
 
-# Escape string for safe YAML double-quoted value
-yaml_escape() {
-  local s="$1"
-  s="${s//\\/\\\\}"    # backslash
-  s="${s//\"/\\\"}"    # double quote
-  echo "$s"
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/url-safety.sh
+. "$SCRIPT_DIR/lib/url-safety.sh"
 
 # Usage: capture-url.sh <url> <vault_path>
 
@@ -19,48 +15,8 @@ VAULT="${2:?Usage: capture-url.sh <url> <vault_path>}"
 TODAY=$(date +%Y-%m-%d)
 
 # --- URL validation: only https://, no SSRF targets ---
-validate_https_url() {
-  local url="$1"
-  [[ "$url" =~ ^https://[^[:space:]]+$ ]] || { echo "ERROR: only https:// URLs allowed" >&2; exit 2; }
-  # Extract hostname
-  local host="${url#https://}"
-  host="${host%%/*}"
-  host="${host%%:*}"
-  # Reject localhost/RFC1918 by name or literal IP prefix
-  case "$host" in
-    localhost|127.*|0.0.0.0|::1) echo "ERROR: loopback blocked" >&2; exit 2 ;;
-    169.254.*) echo "ERROR: link-local blocked" >&2; exit 2 ;;
-    10.*|192.168.*) echo "ERROR: RFC1918 blocked" >&2; exit 2 ;;
-    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) echo "ERROR: RFC1918 blocked" >&2; exit 2 ;;
-  esac
-}
-
-# DNS-resolve hostname and validate the resulting IP (DNS rebinding protection)
-resolve_and_validate_ip() {
-  local url="$1"
-  local host="${url#https://}"
-  host="${host%%/*}"
-  host="${host%%:*}"
-  local ip=""
-  if command -v getent >/dev/null 2>&1; then
-    ip=$(getent hosts "$host" 2>/dev/null | awk '{print $1}' | head -1)
-  elif command -v python3 >/dev/null 2>&1; then
-    ip=$(python3 -c "import socket,sys; print(socket.gethostbyname(sys.argv[1]))" "$host" 2>/dev/null) || true
-  else
-    echo "WARN: no DNS resolver available, skipping IP validation" >&2
-    return 0
-  fi
-  [[ -n "$ip" ]] || { echo "ERROR: DNS resolution failed for $host" >&2; exit 2; }
-  case "$ip" in
-    127.*|0.0.0.0|::1) echo "ERROR: resolved to loopback: $ip" >&2; exit 2 ;;
-    169.254.*) echo "ERROR: resolved to link-local: $ip" >&2; exit 2 ;;
-    10.*|192.168.*) echo "ERROR: resolved to RFC1918: $ip" >&2; exit 2 ;;
-    172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) echo "ERROR: resolved to RFC1918: $ip" >&2; exit 2 ;;
-  esac
-}
-
-validate_https_url "$URL"
-resolve_and_validate_ip "$URL"
+lib_validate_https_url "$URL" || exit 2
+lib_resolve_and_validate_ip "$URL" || exit 2
 
 if ! command -v python3 &>/dev/null; then
   echo "Error: python3 not found" >&2
@@ -76,21 +32,67 @@ TITLE=""
 AUTHOR=""
 CONTENT=""
 
-if command -v defuddle &>/dev/null; then
-  JSON=$(timeout 60 defuddle parse "$URL" --json) || { echo "ERROR: defuddle failed or timed out" >&2; exit 3; }
-  TITLE=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null || echo "")
-  AUTHOR=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('author',''))" 2>/dev/null || echo "")
-  CONTENT=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null || echo "")
-else
-  echo "defuddle not found, falling back to curl + pandoc" >&2
-  if ! command -v pandoc &>/dev/null; then
-    echo "Error: neither defuddle nor pandoc found" >&2
-    exit 1
+# Portable timeout wrapper (macOS lacks `timeout` by default).
+# Usage: maybe_timeout 60 some-cmd args... — if neither timeout nor gtimeout is
+# available, falls through to running the command without any limit.
+maybe_timeout() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$@"
+  else
+    shift  # drop the seconds arg
+    "$@"
   fi
-  CONTENT=$(curl --fail --max-time 60 --max-filesize 10M --proto '=https' --proto-default https -sSL "$URL" | pandoc -f html -t markdown)
-  # Extract title from first H1 if present
-  TITLE=$(echo "$CONTENT" | grep -m1 '^# ' | sed 's/^# //' || echo "")
+}
+
+# Primary: defuddle (best signal-to-noise on blogs/articles)
+if command -v defuddle &>/dev/null; then
+  JSON=$(maybe_timeout 60 defuddle parse "$URL" --json 2>/dev/null) || JSON=""
+  if [[ -n "$JSON" ]]; then
+    TITLE=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('title',''))" 2>/dev/null || echo "")
+    AUTHOR=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('author',''))" 2>/dev/null || echo "")
+    CONTENT=$(echo "$JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('content',''))" 2>/dev/null || echo "")
+  fi
 fi
+
+# Fallback A: trafilatura (replaces pandoc — cleaner output, local-only)
+if [[ -z "$CONTENT" ]] || [[ ${#CONTENT} -lt 500 ]]; then
+  if command -v trafilatura >/dev/null 2>&1; then
+    TRAF_OUT=$(maybe_timeout 60 trafilatura -u "$URL" \
+      --output-format markdown \
+      --with-metadata \
+      --no-tables \
+      --precision 2>/dev/null || echo "")
+    if [[ ${#TRAF_OUT} -gt ${#CONTENT} ]]; then
+      CONTENT="$TRAF_OUT"
+      [[ -z "$TITLE" ]] && TITLE=$(echo "$CONTENT" | grep -m1 '^# ' | sed 's/^# //' || echo "")
+    fi
+  fi
+fi
+
+# Fallback B: r.jina.ai cloud (opt-in only via WIKI_ALLOW_CLOUD=1)
+if [[ ${#CONTENT} -lt 500 && "${WIKI_ALLOW_CLOUD:-0}" == "1" ]]; then
+  # Strip query string and fragment before sending to cloud (privacy)
+  local_jina_url="${URL%%\?*}"
+  local_jina_url="${local_jina_url%%#*}"
+  [[ "$local_jina_url" != "$URL" ]] && echo "warn: query string stripped before cloud capture (privacy)" >&2
+  CLOUD_OUT=$(curl -sSL --max-time 30 "https://r.jina.ai/$local_jina_url" 2>/dev/null || echo "")
+  if [[ ${#CLOUD_OUT} -gt ${#CONTENT} ]]; then
+    CONTENT="$CLOUD_OUT"
+    [[ -z "$TITLE" ]] && TITLE=$(echo "$CONTENT" | grep -m1 '^# ' | sed 's/^# //' || echo "")
+  fi
+fi
+
+# Hard-fail only if ALL three extractors failed
+if [[ -z "$CONTENT" ]]; then
+  echo "ERROR: extraction failed (defuddle / trafilatura / r.jina.ai). Use capture-text.sh for manual content." >&2
+  echo "Install: 'npm i -g defuddle-cli' AND 'uv tool install trafilatura'" >&2
+  exit 3
+fi
+
+# Cap content at 10MB to prevent unbounded memory usage
+CONTENT=$(printf '%s' "$CONTENT" | head -c $((10*1024*1024)))
 
 # Fallback title from URL if empty
 if [[ -z "$TITLE" ]]; then
@@ -118,12 +120,12 @@ fi
 
 {
   echo "---"
-  echo "title: \"$(yaml_escape "$TITLE")\""
+  echo "title: \"$(lib_yaml_escape "$TITLE")\""
   echo "source_type: article"
   echo "source_url: \"${URL}\""
   echo "captured: ${TODAY}"
   if [[ -n "$AUTHOR" ]]; then
-    echo "author: \"$(yaml_escape "$AUTHOR")\""
+    echo "author: \"$(lib_yaml_escape "$AUTHOR")\""
   fi
   echo "---"
   echo ""

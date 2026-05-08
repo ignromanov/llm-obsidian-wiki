@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-05-07
+
+### BREAKING
+
+- **Plugin surface redesigned around 4 task-oriented agents** (wiki-researcher / wiki-advisor / wiki-curator / wiki-scribe) instead of 5 functional agents. Slash commands reduced from 8 to 2 (`/wiki:init`, `/wiki:status`).
+- All previous slash commands removed: `/wiki:capture`, `/wiki:ingest`, `/wiki:query`, `/wiki:browse`, `/wiki:lint`, `/wiki:migrate`. Functionality preserved as internal skills called by agents.
+- Schema bump: v0.3.0 → v0.4.0. Run `${CLAUDE_PLUGIN_ROOT}/scripts/migrations/v0.3.0-to-v0.4.0/migrate.sh --vault <path>`.
+
+### Added
+
+- 4 task-oriented agents with extended personas (identity / voice / vocabulary / anti-patterns / operational backstory / litmus test). All on `model: sonnet`.
+- 7 internal workflow skills: `capture / research / answer / audit / maintain / migrate / init`
+- `wiki/hot.md` — rolling 500-word session cache (Current Focus / Open Questions / Recent Decisions / Last Operations)
+- Tree-topology lints: `index_max_links: 100`, `hub_max_members: 15`
+- Frontmatter fields: `tier (0-5)`, `cluster`, `aliases`, `last_verified`, `key_claims`, `superseded_by`, `supersedes`, `quality`, `filed_from_query`, `captured_by`
+- `wiki/_drafts/` directory for `draft → promote` workflow
+- `wiki/contradictions/` directory for explicit conflict pages
+- `wiki/_logs/` directory for migration + maintenance logs
+- 11 new bash helpers: `update-hot.sh`, `supersede-page.sh`, `split-hub.sh`, `promote-draft.sh`, `find-orphans.sh`, `detect-stale.sh`, `detect-contradictions.sh`, `verify-tree-topology.sh`, `verify-source-drift.sh`, `capture-pdf.sh`, `capture-text.sh`
+- `WIKI_ALLOW_CLOUD` env flag for opt-in `r.jina.ai` cloud fallback in URL capture
+- Schema migration v0.3.0 → v0.4.0 with idempotent + backup-first design
+- Test fixture vault + smoke tests for migration
+
+### Changed
+
+- `capture-url.sh` — replaced `pandoc` fallback with `trafilatura` (10× cleaner output); added `r.jina.ai` opt-in cloud fallback for JS-heavy sites
+- `wiki-health.sh` — refactored as aggregator delegating to atomic check scripts
+- `init-vault.sh` — adds `_drafts/`, `contradictions/`, `_logs/` dirs; seeds `hot.md`
+- All 4 templates (`concept.md`, `source-summary.md`, `decision.md`, `synthesis.md`) extended with v0.4.0 fields
+
+### Removed
+
+- 5 old agents (`wiki-capture-agent`, `wiki-ingest-agent`, `wiki-query-agent`, `wiki-lint-agent`, `wiki-migrate-agent`)
+- 6 old user-facing skills (`capture` v0.3, `ingest`, `query`, `browse`, `lint`, `status` skills)
+
+### Migration guide
+
+See `docs/migration-v0.3.0-to-v0.4.0.md`.
+
 ## [0.3.0] — 2026-04-12
 
 ### Security

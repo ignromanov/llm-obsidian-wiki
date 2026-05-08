@@ -9,6 +9,10 @@ tldr: ""
 tags: []
 sources: []
 relations: []
+tier: 4
+quality: high
+captured_by: "{{AGENT_NAME}}"
+key_claims: []
 aliases: []
 ---
 

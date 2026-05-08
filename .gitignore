@@ -1,3 +1,7 @@
 .DS_Store
 node_modules/
 *.tmp
+
+# Local working state (not for repo)
+.claude/
+worktrees/
