@@ -12,8 +12,14 @@ import sys, re
 path, key = sys.argv[1], sys.argv[2]
 try:
     import yaml
+    # Read only the FIRST YAML document. A markdown page's closing `---`
+    # frontmatter fence is a YAML document separator, so feeding the whole
+    # file to single-document safe_load() raises ComposerError on any page
+    # with a body. safe_load_all + next() parses just the frontmatter.
     with open(path) as f:
-        d = yaml.safe_load(f) or {}
+        d = next(yaml.safe_load_all(f), None)
+    if not isinstance(d, dict):
+        d = {}
     v = d.get(key, '')
     if v is not None:
         print(v)

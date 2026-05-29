@@ -48,7 +48,7 @@ Used by wiki-advisor only.
    - Drill to relevant concepts/decisions
 
 3. **Multi-stage retrieval** with claim-level granularity:
-   - `${CLAUDE_PLUGIN_ROOT}/scripts/wiki-search.sh <query>`
+   - `${CLAUDE_PLUGIN_ROOT}/scripts/wiki-search.sh --vault $VAULT_PATH --query "<query>"`
    - For each candidate page, read `key_claims` first
    - Read full body only if claims insufficient
 

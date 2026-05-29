@@ -11,9 +11,37 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 # shellcheck source=./lib/read-yaml-key.sh
 source "$SCRIPT_DIR/lib/read-yaml-key.sh"
 
-VAULT_PATH="${1:?Usage: wiki-search.sh <vault_path> <query> [limit]}"
-QUERY="${2:?Usage: wiki-search.sh <vault_path> <query> [limit]}"
-LIMIT="${3:-20}"
+usage() {
+  cat >&2 <<'EOF'
+Usage: wiki-search.sh <vault_path> "<query>" [limit]
+       wiki-search.sh --vault <path> --query "<text>" [--limit <n>]
+Combined search + TLDR triage. Flags and positional args are interchangeable.
+EOF
+}
+
+# Accept both flag form (--vault/--query/--limit) and the original positional
+# form (<vault> <query> [limit]). SKILL docs use flags; existing callers use
+# positional — support both so neither silently fails (#4).
+VAULT_PATH=""; QUERY=""; LIMIT=20
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --vault) VAULT_PATH="${2:?--vault needs a value}"; shift 2 ;;
+    --query) QUERY="${2:?--query needs a value}"; shift 2 ;;
+    --limit) LIMIT="${2:?--limit needs a value}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; while [[ $# -gt 0 ]]; do POSITIONAL+=("$1"); shift; done; break ;;
+    -*) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
+    *) POSITIONAL+=("$1"); shift ;;
+  esac
+done
+
+[[ -z "$VAULT_PATH" && ${#POSITIONAL[@]} -ge 1 ]] && VAULT_PATH="${POSITIONAL[0]}"
+[[ -z "$QUERY"      && ${#POSITIONAL[@]} -ge 2 ]] && QUERY="${POSITIONAL[1]}"
+[[ ${#POSITIONAL[@]} -ge 3 ]] && LIMIT="${POSITIONAL[2]}"
+
+[[ -n "$VAULT_PATH" && -n "$QUERY" ]] || { usage; exit 2; }
+[[ "$LIMIT" =~ ^[0-9]+$ ]] || { echo "limit must be a positive integer: $LIMIT" >&2; exit 2; }
 
 OBS_VAULT=$(lib_read_yaml_key "${VAULT_PATH}/wiki.config.md" "vault_name")
 if [[ -z "$OBS_VAULT" ]]; then
