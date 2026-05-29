@@ -4,7 +4,7 @@
 
 ### LLMs forget everything between sessions. This plugin gives them a memory that compounds.
 
-![Version](https://img.shields.io/badge/version-0.4.0-blue)
+![Version](https://img.shields.io/badge/version-0.4.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-orange)
 
