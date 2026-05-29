@@ -26,8 +26,9 @@ fi
 
 VIOLATIONS=()
 
-# Check index.md
-INDEX="$VAULT_PATH/wiki/index.md"
+# Check index.md (path comes from config `index_file:`, resolved against vault root)
+INDEX_FILE=$(grep -E '^index_file:' "$CONFIG" 2>/dev/null | sed 's/^index_file: *//' | tr -d '"' || echo "")
+INDEX="$VAULT_PATH/${INDEX_FILE:-index.md}"
 if [[ -f "$INDEX" ]]; then
   LINKS=$(grep -oE '\[\[[^]]+\]\]' "$INDEX" | wc -l | tr -d ' ')
   if [[ "$LINKS" -gt "$INDEX_MAX" ]]; then
@@ -35,16 +36,16 @@ if [[ -f "$INDEX" ]]; then
   fi
 fi
 
-# Check each _hub
+# Check each hub. Hubs are identified by filename (`_hub.md`), not the `type:`
+# field — that field drifts in real vaults (e.g. concepts/_hub.md carries
+# `type: concept`), so a type filter silently skips the largest hubs.
 while IFS= read -r hub; do
-  TYPE=$(grep -E '^type:' "$hub" | sed 's/^type: *//' | tr -d '"' || echo "")
-  [[ "$TYPE" == "_hub" ]] || continue
   MEMBERS=$(grep -oE '\[\[[^]]+\]\]' "$hub" | wc -l | tr -d ' ')
   if [[ "$MEMBERS" -gt "$HUB_MAX" ]]; then
     rel="${hub#"$VAULT_PATH"/}"
     VIOLATIONS+=("P1 $rel: $MEMBERS members (max $HUB_MAX) — split required")
   fi
-done < <(find "$VAULT_PATH/wiki" -name "*.md" -type f)
+done < <(find "$VAULT_PATH/wiki" -name "_hub.md" -type f)
 
 if [[ ${#VIOLATIONS[@]} -eq 0 ]]; then
   echo "Tree topology OK (index ≤$INDEX_MAX, hubs ≤$HUB_MAX)"

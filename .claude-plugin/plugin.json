@@ -1,6 +1,6 @@
 {
   "name": "llm-obsidian-wiki",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Persistent, compounding knowledge base maintained by LLMs in Obsidian — agent-first edition. Four task-oriented agents (Researcher / Advisor / Curator / Scribe) with citations, confidence, supersession, and rolling session cache. Inspired by Karpathy's LLM Wiki pattern.",
   "author": {
     "name": "Ignat Romanov",

@@ -7,6 +7,8 @@ umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/url-safety.sh
 . "$SCRIPT_DIR/lib/url-safety.sh"
+# shellcheck source=lib/portable-hash.sh
+. "$SCRIPT_DIR/lib/portable-hash.sh"
 
 # Usage: capture-url.sh <url> <vault_path>
 
@@ -118,12 +120,17 @@ fi
 
 # --- Write file ---
 
+# Content hash for source-drift detection (parity with capture-text.sh, which
+# embeds sha256 so verify-source-drift.sh can detect upstream changes).
+SHA=$(printf '%s' "$CONTENT" | lib_sha256_stdin)
+
 {
   echo "---"
   echo "title: \"$(lib_yaml_escape "$TITLE")\""
   echo "source_type: article"
   echo "source_url: \"${URL}\""
   echo "captured: ${TODAY}"
+  echo "sha256: ${SHA}"
   if [[ -n "$AUTHOR" ]]; then
     echo "author: \"$(lib_yaml_escape "$AUTHOR")\""
   fi

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-05-28
+
+### Fixed
+
+- **Audit no longer aborts on real vaults.** `lib/read-yaml-key.sh` fed the whole file to single-document `yaml.safe_load()`; a page's closing `---` frontmatter fence is a YAML document separator, so parsing crashed with `ComposerError` and `wiki-health.sh` died in its first check — falsely implying a clean vault. Now reads only the first document (`safe_load_all` + `next`). (#6)
+- **Malformed frontmatter degrades gracefully.** PyYAML parse errors (e.g. an unquoted colon → `ScannerError`) were uncaught and dumped tracebacks; now falls back to the tolerant line scanner. (#6)
+- **`verify-tree-topology.sh`** detects hubs by filename (`_hub.md`) instead of the `type:` field — which drifts in real vaults and silently skipped the largest hubs — and resolves the index path from config `index_file:` instead of hardcoding `wiki/index.md`. (#2)
+- **`capture-url.sh`** emits `sha256` of extracted content so URL-captured sources are covered by `verify-source-drift.sh`, matching `capture-text.sh`. (#3)
+- **`wiki-search.sh`** accepts both `--vault`/`--query`/`--limit` flags and the original positional form; `answer/SKILL.md` aligned. (#4)
+- **`update-index.sh`** merge mode: regenerates only the content between auto-index sentinels and preserves hand-curated narrative; refuses to overwrite an existing index without sentinels unless `--force`. (#5)
+
+> Schema version unchanged (0.4.0) — these are script fixes, no vault migration required.
+
 ## [0.4.0] — 2026-05-07
 
 ### BREAKING
