@@ -22,10 +22,8 @@ done
 DRIFT=()
 MISSING=()
 
-while IFS= read -r summary; do
-  expected_sha=$(lib_read_yaml_key "$summary" "sha256" || echo "")
-  raw_path=$(lib_read_yaml_key "$summary" "raw_path" || echo "")
-
+# One python3 spawn for all source-summary files via lib_read_yaml_keys_bulk.
+while IFS=$'\t' read -r summary expected_sha raw_path; do
   [[ -n "$expected_sha" ]] || continue
   [[ -n "$raw_path" ]] || continue
 
@@ -39,7 +37,8 @@ while IFS= read -r summary; do
   if [[ "$actual_sha" != "$expected_sha" ]]; then
     DRIFT+=("${summary#"$VAULT_PATH"/}: expected $expected_sha, got $actual_sha")
   fi
-done < <(find "$VAULT_PATH/wiki/sources" -name "*.md" -type f 2>/dev/null || true)
+done < <(find "$VAULT_PATH/wiki/sources" -name "*.md" -type f 2>/dev/null \
+           | lib_read_yaml_keys_bulk sha256 raw_path)
 
 if [[ ${#DRIFT[@]} -eq 0 && ${#MISSING[@]} -eq 0 ]]; then
   echo "No source drift detected"

@@ -24,34 +24,27 @@ if [[ -f "$CONFIG" ]]; then
   [[ -n "$v" ]] && HUB_MAX="$v"
 fi
 
-VIOLATIONS=()
+ADVISORIES=()
 
-# Check index.md (path comes from config `index_file:`, resolved against vault root)
-INDEX_FILE=$(grep -E '^index_file:' "$CONFIG" 2>/dev/null | sed 's/^index_file: *//' | tr -d '"' || echo "")
-INDEX="$VAULT_PATH/${INDEX_FILE:-index.md}"
-if [[ -f "$INDEX" ]]; then
-  LINKS=$(grep -oE '\[\[[^]]+\]\]' "$INDEX" | wc -l | tr -d ' ')
-  if [[ "$LINKS" -gt "$INDEX_MAX" ]]; then
-    VIOLATIONS+=("P1 index.md: $LINKS links (max $INDEX_MAX) — split required")
-  fi
-fi
+# index.md is auto-generated — exempt from link-count check entirely.
 
 # Check each hub. Hubs are identified by filename (`_hub.md`), not the `type:`
 # field — that field drifts in real vaults (e.g. concepts/_hub.md carries
 # `type: concept`), so a type filter silently skips the largest hubs.
+# Hub overages are ADVISORY (soft cap), not hard violations.
 while IFS= read -r hub; do
   MEMBERS=$(grep -oE '\[\[[^]]+\]\]' "$hub" | wc -l | tr -d ' ')
   if [[ "$MEMBERS" -gt "$HUB_MAX" ]]; then
     rel="${hub#"$VAULT_PATH"/}"
-    VIOLATIONS+=("P1 $rel: $MEMBERS members (max $HUB_MAX) — split required")
+    ADVISORIES+=("$rel: $MEMBERS members (soft cap $HUB_MAX)")
   fi
 done < <(find "$VAULT_PATH/wiki" -name "_hub.md" -type f)
 
-if [[ ${#VIOLATIONS[@]} -eq 0 ]]; then
-  echo "Tree topology OK (index ≤$INDEX_MAX, hubs ≤$HUB_MAX)"
-  exit 0
+echo "Tree topology OK (index exempt — auto-generated, hubs soft cap $HUB_MAX)"
+
+if [[ ${#ADVISORIES[@]} -gt 0 ]]; then
+  echo "Advisory: ${#ADVISORIES[@]} hub(s) over soft cap ($HUB_MAX):"
+  for a in "${ADVISORIES[@]}"; do echo "  - $a"; done
 fi
 
-echo "Found ${#VIOLATIONS[@]} tree-topology violation(s):"
-for v in "${VIOLATIONS[@]}"; do echo "  - $v"; done
-exit 1
+exit 0

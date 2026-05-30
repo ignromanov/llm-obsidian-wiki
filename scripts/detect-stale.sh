@@ -33,16 +33,18 @@ LINKS=$(grep -rhoE '\[\[[^]]+\]\]' "$VAULT_PATH/wiki" 2>/dev/null \
   | sort -u || true)
 
 STALE=()
-while IFS= read -r page; do
+
+# One python3 spawn for all wiki pages via lib_read_yaml_keys_bulk.
+while IFS=$'\t' read -r page last_verified updated created; do
   slug=$(basename "$page" .md)
   case "$slug" in
     index|hot|_hub*) continue ;;
   esac
 
-  # last_verified or updated or created
-  last=$(lib_read_yaml_key "$page" "last_verified" || echo "")
-  [[ -n "$last" ]] || last=$(lib_read_yaml_key "$page" "updated" || echo "")
-  [[ -n "$last" ]] || last=$(lib_read_yaml_key "$page" "created" || echo "")
+  # last_verified takes precedence, then updated, then created
+  last="$last_verified"
+  [[ -n "$last" ]] || last="$updated"
+  [[ -n "$last" ]] || last="$created"
   [[ -n "$last" ]] || continue
 
   # ISO date → epoch (portable: BSD then GNU)
@@ -54,7 +56,8 @@ while IFS= read -r page; do
       STALE+=("$page (last: $last, no incoming links)")
     fi
   fi
-done < <(find "$VAULT_PATH/wiki" -name "*.md" -not -path "*/_drafts/*" -not -path "*/_logs/*" -type f)
+done < <(find "$VAULT_PATH/wiki" -name "*.md" -not -path "*/_drafts/*" -not -path "*/_logs/*" -type f \
+           | lib_read_yaml_keys_bulk last_verified updated created)
 
 if [[ ${#STALE[@]} -eq 0 ]]; then
   echo "No stale pages (threshold: $DAYS days)"
